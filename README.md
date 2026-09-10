@@ -6,6 +6,8 @@ or a zip.
 
 Runs entirely on your machine. Nothing is uploaded anywhere.
 
+See [PLAN.md](PLAN.md) for the development roadmap and the `doc_id` runbook.
+
 ## Requirements
 
 Node **22.12+** (TanStack Start requires it). If you use nvm:
