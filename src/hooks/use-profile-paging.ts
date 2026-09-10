@@ -23,6 +23,13 @@ const TAB_CAP: Record<ProfileTab, number> = {
 /** Spacing between consecutive page requests, for the same reason as the caps. */
 const REQUEST_SPACING_MS = 280;
 
+/**
+ * A stop on any single tab, however deep the user asked to go. Not a policy
+ * about how much to archive -- it is a guard against paging forever if
+ * Instagram keeps handing out cursors for a feed that never ends.
+ */
+const ARCHIVE_CEILING = 5000;
+
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -166,6 +173,47 @@ export function useProfilePaging(resolve: ResolveApi) {
     [requestMore, resultRef, sessionRef],
   );
 
+  /**
+   * Page one tab toward a target depth, for an archive run.
+   *
+   * `target` of null means "everything": page until Instagram stops handing out
+   * a cursor. Spacing is the same as everywhere else -- an archive is a lot of
+   * requests in a row, which is exactly when pacing matters.
+   *
+   * Returns the number of posts held for that tab when it stops.
+   */
+  const collectTab = useCallback(
+    async (
+      tabId: ProfileTab,
+      target: number | null,
+      onProgress?: (loaded: number) => void,
+      signal?: AbortSignal,
+    ): Promise<number> => {
+      await ensureTabLoaded(tabId);
+      const session = sessionRef.current;
+
+      for (;;) {
+        if (signal?.aborted || sessionRef.current !== session) break;
+        const current = resultRef.current;
+        if (!current || !current.ok || current.mode !== "profile") break;
+        const feed = current.profile[tabId];
+        onProgress?.(feed.items.length);
+        if (!feed.hasMore || !feed.cursor) break;
+        if (target !== null && feed.items.length >= target) break;
+        // A hard ceiling so a runaway cursor cannot page forever.
+        if (feed.items.length >= ARCHIVE_CEILING) break;
+
+        const { username, userId } = current.profile;
+        await queue.current.run(() => requestMore(tabId, feed.cursor, userId, username));
+        await sleep(REQUEST_SPACING_MS);
+      }
+
+      const done = resultRef.current;
+      return done && done.ok && done.mode === "profile" ? done.profile[tabId].items.length : 0;
+    },
+    [ensureTabLoaded, requestMore, resultRef, sessionRef],
+  );
+
   // A search loads only the Posts preview; whichever tab the user opens is
   // fetched here, once.
   useEffect(() => {
@@ -173,7 +221,7 @@ export function useProfilePaging(resolve: ResolveApi) {
     void ensureTabLoaded(tab);
   }, [ensureTabLoaded, profile, tab]);
 
-  return { loadingMore, tabLoading, fillNote, loadMore, loadRest, ensureTabLoaded };
+  return { loadingMore, tabLoading, fillNote, loadMore, loadRest, ensureTabLoaded, collectTab };
 }
 
 export type PagingApi = ReturnType<typeof useProfilePaging>;

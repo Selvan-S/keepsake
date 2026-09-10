@@ -2,13 +2,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import type { PostResult, ProfileTab } from "@/core/instagram/types";
 import { plural } from "@/core/archive/naming";
-import {
-  downloadFeedZip,
-  downloadPostZip,
-  downloadProfileZip,
-  type ZipOutcome,
-} from "@/lib/download/zip";
-import type { PagingApi } from "./use-profile-paging";
+import { downloadFeedZip, downloadPostZip, type ZipOutcome } from "@/lib/download/zip";
 import type { ResolveApi } from "./use-resolve";
 
 function saveToast({ outcome, saved, failed }: ZipOutcome, extra?: string) {
@@ -27,8 +21,8 @@ function saveToast({ outcome, saved, failed }: ZipOutcome, extra?: string) {
 }
 
 /** Owns the zip/share work and the "which button is busy" state behind it. */
-export function useDownloads(resolve: ResolveApi, paging: PagingApi) {
-  const { profile, resultRef } = resolve;
+export function useDownloads(resolve: ResolveApi) {
+  const { profile } = resolve;
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const guard = useCallback(async (key: string, message: string, work: () => Promise<void>) => {
@@ -62,21 +56,5 @@ export function useDownloads(resolve: ResolveApi, paging: PagingApi) {
     [guard, profile],
   );
 
-  const downloadProfile = useCallback(() => {
-    if (!profile) return;
-    return guard("feed-all", "Could not zip that profile.", async () => {
-      // "Download everything" has to mean everything. Tabs the search skipped
-      // are fetched now -- sequentially, since this is the one place we
-      // knowingly touch every endpoint and a burst is what gets us blocked.
-      for (const tabId of ["reels", "stories", "highlights"] as ProfileTab[]) {
-        await paging.ensureTabLoaded(tabId);
-      }
-      const current = resultRef.current;
-      const full = current && current.ok && current.mode === "profile" ? current.profile : profile;
-      const outcome = await downloadProfileZip(full);
-      saveToast(outcome, `Packed the public archive (${plural(outcome.saved, "file")})`);
-    });
-  }, [guard, paging, profile, resultRef]);
-
-  return { busyKey, downloadPost, downloadTab, downloadProfile };
+  return { busyKey, downloadPost, downloadTab };
 }

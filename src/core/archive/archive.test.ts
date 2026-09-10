@@ -205,6 +205,24 @@ test("a single oversized file still gets archived, in a batch of its own", () =>
   assert.equal(acc.accepts(1), false, "and is full immediately afterwards");
 });
 
+test("isFull reports the limits, checked after adding", () => {
+  // Sizes are only knowable after downloading, so the run adds a file and then
+  // asks whether to close. A batch can overshoot maxBytes by one file; that is
+  // inherent, and the budget has to leave room for it.
+  const acc = new BatchAccumulator({ maxFiles: 3, maxBytes: 1000 });
+  assert.equal(acc.isFull, false, "an empty batch is never full");
+  acc.add(100);
+  assert.equal(acc.isFull, false);
+  acc.add(2000);
+  assert.equal(acc.isFull, true, "overshot the byte budget on a single file");
+
+  const byCount = new BatchAccumulator({ maxFiles: 2, maxBytes: Infinity });
+  byCount.add(1);
+  assert.equal(byCount.isFull, false);
+  byCount.add(1);
+  assert.equal(byCount.isFull, true);
+});
+
 test("reset makes the accumulator reusable for the next batch", () => {
   const acc = new BatchAccumulator({ maxFiles: 2, maxBytes: 100 });
   acc.add(90);

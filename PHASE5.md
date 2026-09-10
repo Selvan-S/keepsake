@@ -136,12 +136,20 @@ multi-batch job, never on load. Degrade silently if refused.
 
 ## Build order
 
-1. `core/archive/plan.ts` + `batch.ts` with tests — pure, no UI.
-2. `use-archive.ts` — the state machine, driving existing paging + zip code.
-3. Scope dialog + progress UI. Replace "Save profile".
+1. **Done.** `core/archive/plan.ts` + `batch.ts` with tests — pure, no UI.
+2. **Done.** `use-archive.ts` — the state machine, plus `collectTab` on the
+   paging hook so an archive pages through the same queue and spacing as
+   everything else.
+3. **Done.** Scope dialog + progress. "Save profile" opens it instead of zipping
+   whatever happened to be in memory; the old capped path is deleted rather than
+   left callable.
 4. Per-tab full download.
 5. Selection mode.
 6. Notifications.
+
+Steps 1–3 are the bug fix. **Not yet verified against a real archive run** —
+the batching, resume and save-per-batch paths have only been exercised by
+typecheck and the pure tests.
 
 Each step ships green and is independently useful. 1–3 fix the actual bug.
 

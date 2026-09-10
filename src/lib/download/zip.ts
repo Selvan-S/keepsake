@@ -1,4 +1,4 @@
-import type { PostResult, ProfileResult, ProfileTab } from "@/core/instagram/types";
+import type { PostResult, ProfileTab } from "@/core/instagram/types";
 import { fetchUrl } from "@/lib/media/source";
 import { entriesFromPosts, fileName } from "@/core/archive/naming";
 import { shareOrDownload, type SaveOutcome } from "./share";
@@ -80,34 +80,4 @@ export function downloadFeedZip(
   posts: PostResult[],
 ): Promise<ZipOutcome> {
   return zipMedia(entriesFromPosts(username, tab, posts), `${username}_${tab}.zip`);
-}
-
-/**
- * Per-tab caps for a whole-profile archive, so one enormous tab cannot crowd
- * the others out of the ZIP_LIMIT. Ordered by what a person is most likely to
- * be archiving urgently: stories expire, posts do not.
- */
-const PROFILE_BUCKETS: { tab: ProfileTab; cap: number }[] = [
-  { tab: "stories", cap: 24 },
-  { tab: "highlights", cap: 40 },
-  { tab: "posts", cap: 30 },
-  { tab: "reels", cap: 24 },
-];
-
-export function profileZipEntries(profile: ProfileResult): ZipEntry[] {
-  const username = profile.username;
-  const entries: ZipEntry[] = [];
-  if (profile.profilePicUrl) {
-    entries.push({ name: `${username}/avatar.jpg`, url: profile.profilePicUrl });
-  }
-  for (const bucket of PROFILE_BUCKETS) {
-    entries.push(
-      ...entriesFromPosts(username, bucket.tab, profile[bucket.tab].items).slice(0, bucket.cap),
-    );
-  }
-  return entries;
-}
-
-export function downloadProfileZip(profile: ProfileResult): Promise<ZipOutcome> {
-  return zipMedia(profileZipEntries(profile), `${profile.username}_profile.zip`);
 }

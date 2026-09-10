@@ -5,12 +5,14 @@ import { useDownloads } from "@/hooks/use-downloads";
 import { useProfilePaging } from "@/hooks/use-profile-paging";
 import { useResolve } from "@/hooks/use-resolve";
 import { useSession } from "@/hooks/use-session";
+import { useArchive } from "@/hooks/use-archive";
 import { cn } from "@/lib/utils";
 import { HighlightFilter, LoadMoreBar, MediaGrid, TabLoading } from "./media-grid";
 import { Lightbox } from "./lightbox";
 import { ProfileHeader } from "./profile-header";
 import { SearchBar } from "./search-bar";
 import { SessionPanel } from "./session-panel";
+import { ArchiveDialog } from "./archive-dialog";
 import { EmptyTab, LoadingState, ResolveError } from "./states";
 
 /**
@@ -21,12 +23,14 @@ import { EmptyTab, LoadingState, ResolveError } from "./states";
 export function KeepsakeApp() {
   const resolve = useResolve();
   const paging = useProfilePaging(resolve);
-  const downloads = useDownloads(resolve, paging);
+  const downloads = useDownloads(resolve);
   const session = useSession();
+  const archive = useArchive(resolve, paging);
 
   const { loading, result, profile, tab, setTab, rawPosts } = resolve;
   const [lightbox, setLightbox] = useState<{ post: PostResult; index: number } | null>(null);
   const [highlightFilter, setHighlightFilter] = useState("all");
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   useEffect(() => {
     setHighlightFilter("all");
@@ -112,7 +116,7 @@ export function KeepsakeApp() {
             tab={tab}
             onTab={setTab}
             onSaveTab={() => void downloads.downloadTab(tab, posts)}
-            onSaveProfile={() => void downloads.downloadProfile()}
+            onSaveProfile={() => setArchiveOpen(true)}
             savingTab={downloads.busyKey === "feed-tab"}
             savingProfile={downloads.busyKey === "feed-all"}
             fillNote={paging.fillNote}
@@ -154,6 +158,15 @@ export function KeepsakeApp() {
           />
         ) : null}
       </main>
+
+      {archiveOpen && profile ? (
+        <ArchiveDialog
+          profile={profile}
+          archive={archive}
+          authenticated={session.authenticated}
+          onClose={() => setArchiveOpen(false)}
+        />
+      ) : null}
 
       {lightbox ? (
         <Lightbox

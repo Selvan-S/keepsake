@@ -49,7 +49,19 @@ export class BatchAccumulator {
   }
 
   /**
-   * Whether this batch can take one more file.
+   * Whether this batch has hit either limit and should be closed.
+   *
+   * Checked *after* adding, because a media URL carries no size: the only way
+   * to learn how big a file is, is to download it. A batch can therefore
+   * overshoot `maxBytes` by up to one file, which is inherent rather than a
+   * bug — the budget has to leave room for that.
+   */
+  get isFull(): boolean {
+    return this.files >= this.budget.maxFiles || this.bytes >= this.budget.maxBytes;
+  }
+
+  /**
+   * Whether this batch can take one more file of a *known* size.
    *
    * An empty batch always accepts, however large the file: a single 300 MB
    * video must still be archivable, and refusing it would stall the run
