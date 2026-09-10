@@ -1,6 +1,6 @@
 import { Download, Film, Image as ImageIcon, LoaderCircle, Play } from "lucide-react";
 import type { PostResult } from "@/core/instagram/types";
-import { proxiedMediaUrl } from "@/lib/instagram/media-url";
+import { displayUrl } from "@/lib/media/source";
 import { fileName } from "@/lib/download/naming";
 import { saveHref } from "@/lib/download/share";
 import { formatDate } from "@/lib/format";
@@ -43,7 +43,7 @@ export function MediaTile({
       >
         {cover ? (
           <img
-            src={proxiedMediaUrl(cover.thumbnailUrl || cover.url)}
+            src={displayUrl(cover.thumbnailUrl || cover.url)}
             alt={post.caption.slice(0, 80) || `Post ${post.shortcode}`}
             className="h-full w-full object-cover transition-transform duration-500 ease-[var(--ease-smooth-out)] group-hover:scale-[1.03]"
           />
@@ -124,7 +124,7 @@ export function MediaTile({
                   aria-label={`Save slide ${itemIndex + 1}`}
                 >
                   <img
-                    src={proxiedMediaUrl(item.thumbnailUrl || item.url)}
+                    src={displayUrl(item.thumbnailUrl || item.url)}
                     alt=""
                     className="h-full w-full object-cover"
                   />

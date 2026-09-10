@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import type { PostResult } from "@/core/instagram/types";
-import { proxiedMediaUrl } from "@/lib/instagram/media-url";
+import { displayUrl } from "@/lib/media/source";
 import { fileName } from "@/lib/download/naming";
 import { saveHref } from "@/lib/download/share";
 import { Button } from "@/components/ui/button";
@@ -81,8 +81,8 @@ export function Lightbox({
         {item.kind === "video" ? (
           <video
             key={item.url}
-            src={proxiedMediaUrl(item.url)}
-            poster={proxiedMediaUrl(item.thumbnailUrl)}
+            src={displayUrl(item.url)}
+            poster={displayUrl(item.thumbnailUrl)}
             className="max-h-full max-w-full rounded-lg object-contain"
             controls
             autoPlay
@@ -91,7 +91,7 @@ export function Lightbox({
           />
         ) : (
           <img
-            src={proxiedMediaUrl(item.url)}
+            src={displayUrl(item.url)}
             alt={post.caption.slice(0, 120)}
             className="max-h-full max-w-full rounded-lg object-contain"
             onClick={(e) => e.stopPropagation()}

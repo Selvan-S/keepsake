@@ -1,6 +1,6 @@
 import { BadgeCheck, UserRound } from "lucide-react";
 import type { ProfileResult, ProfileTab } from "@/core/instagram/types";
-import { proxiedMediaUrl } from "@/lib/instagram/media-url";
+import { displayUrl } from "@/lib/media/source";
 import { formatCount } from "@/lib/format";
 import { DownloadBar } from "./download-bar";
 import { TabBar } from "./tab-bar";
@@ -42,7 +42,7 @@ export function ProfileHeader({
       <div className="flex items-start gap-4">
         {profile.profilePicUrl ? (
           <img
-            src={proxiedMediaUrl(profile.profilePicUrl)}
+            src={displayUrl(profile.profilePicUrl)}
             alt=""
             className="size-16 rounded-full object-cover sm:size-[4.5rem]"
           />

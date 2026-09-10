@@ -1,4 +1,4 @@
-import { proxiedMediaUrl } from "@/lib/instagram/media-url";
+import { downloadUrl } from "@/lib/media/source";
 
 /**
  * How a finished file reaches the user. This is a deliberate platform seam:
@@ -32,7 +32,7 @@ function isEmbedded(): boolean {
 
 /** A link that saves one media file under a chosen name, via the proxy. */
 export function saveHref(url: string, name: string): string {
-  return proxiedMediaUrl(url, name);
+  return downloadUrl(url, name);
 }
 
 /**

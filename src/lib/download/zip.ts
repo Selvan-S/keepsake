@@ -1,5 +1,5 @@
 import type { PostResult, ProfileResult, ProfileTab } from "@/core/instagram/types";
-import { proxiedMediaUrl } from "@/lib/instagram/media-url";
+import { fetchUrl } from "@/lib/media/source";
 import { entriesFromPosts, fileName } from "./naming";
 import { shareOrDownload, type SaveOutcome } from "./share";
 
@@ -36,7 +36,7 @@ export async function zipMedia(entries: ZipEntry[], zipName: string): Promise<Zi
         // so every failure is counted and reported rather than thrown or, worse,
         // dropped silently into a zip the caller then calls a success.
         try {
-          const res = await fetch(proxiedMediaUrl(entry.url), {
+          const res = await fetch(fetchUrl(entry.url), {
             signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
           });
           if (!res.ok) {

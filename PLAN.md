@@ -294,7 +294,38 @@ Expect a one-time new-device checkpoint on first login in the browser. Normal.
 
 ---
 
-## Phase 4 — React Native / Expo (optional)
+## Phase 4 — React Native / Expo (optional) — **groundwork done, app not started**
+
+Done, and verifiable without a mobile toolchain:
+
+- `src/core/portability.test.ts` fails the build if `core/` gains a DOM, Node,
+  framework or platform import, or loses its explicit `.ts` extensions. Verified
+  to actually fire by introducing a violation. Without this the Phase 1
+  investment quietly rots — one convenient `window.` is invisible in review.
+- **The runtime globals core assumes are now inventoried** in that same test.
+  Two need attention on React Native: `AbortSignal.timeout` (absent on older RN
+  runtimes — polyfill or drop the timeouts) and `crypto.randomUUID` (absent by
+  default, already injectable via `InstagramSession.randomToken`).
+- `src/lib/media/source.ts` is the media-URL seam. Components and the zip
+  builder no longer construct proxy paths; they ask for `displayUrl` /
+  `downloadUrl` / `fetchUrl`. On mobile these become the identity function and
+  `/api/media` + `media-url.ts` are deleted.
+
+**Not started: the Expo app itself.** It needs a toolchain that cannot be
+verified from here — no Android SDK, no emulator, no way to produce or run an
+APK. Scaffolding it would mean writing several hundred lines of code that
+nobody has executed, which is the opposite of how the phases above were done.
+
+Remaining work, in order:
+
+1. Restructure to a workspace (`apps/web`, `apps/mobile`, `packages/core`) or
+   point Metro at `src/core` directly.
+2. `expo-media-library` for save-to-camera-roll behind the existing `share.ts`
+   signature.
+3. The Android share-target intent filter — the actual reason to do this phase.
+4. Swap `media/source.ts` for the identity implementation; delete `/api/*`.
+
+## Original Phase 4 notes
 
 Only worth it for the share-target integration: Instagram → Share → Keepsake,
 instead of copy-and-paste. That, plus save-to-camera-roll, is the real reason to
