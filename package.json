@@ -3,12 +3,15 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/lib/instagram/*.test.ts",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

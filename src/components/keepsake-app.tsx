@@ -61,6 +61,8 @@ const AUTO_CAP: Record<ProfileTab, number> = {
 
 const ZIP_LIMIT = 100;
 const ZIP_BATCH = 6;
+/** Per-file ceiling so one stalled CDN response cannot hang a whole archive. */
+const MEDIA_TIMEOUT_MS = 45_000;
 
 function tabFromQuery(q: string): ProfileTab {
   const lower = q.toLowerCase();
@@ -175,27 +177,48 @@ async function shareOrDownload(
   return "downloaded";
 }
 
-async function zipMedia(
-  entries: { name: string; url: string }[],
-  zipName: string,
-): Promise<"shared" | "downloaded" | "cancelled"> {
+type ZipOutcome = {
+  outcome: "shared" | "downloaded" | "cancelled";
+  saved: number;
+  failed: number;
+};
+
+async function zipMedia(entries: { name: string; url: string }[], zipName: string): Promise<ZipOutcome> {
   const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
   const slice = entries.slice(0, ZIP_LIMIT);
+  let saved = 0;
+  let failed = 0;
   for (let i = 0; i < slice.length; i += ZIP_BATCH) {
     const batch = slice.slice(i, i + ZIP_BATCH);
     await Promise.all(
       batch.map(async (entry) => {
-        const res = await fetch(proxiedMediaUrl(entry.url));
-        if (!res.ok) return;
-        zip.file(entry.name, await res.blob());
+        // One expired or unreachable CDN URL must not abort the whole archive,
+        // so every failure is counted and reported rather than thrown or, worse,
+        // dropped silently into a zip the caller then calls a success.
+        try {
+          const res = await fetch(proxiedMediaUrl(entry.url), {
+            signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
+          });
+          if (!res.ok) {
+            failed += 1;
+            return;
+          }
+          zip.file(entry.name, await res.blob());
+          saved += 1;
+        } catch {
+          failed += 1;
+        }
       }),
     );
+  }
+  if (saved === 0) {
+    throw new Error("None of those files could be fetched.");
   }
   const blob = await zip.generateAsync({ type: "blob" });
   const href = URL.createObjectURL(blob);
   try {
-    return await shareOrDownload(blob, zipName, href);
+    return { outcome: await shareOrDownload(blob, zipName, href), saved, failed };
   } finally {
     window.setTimeout(() => URL.revokeObjectURL(href), 15_000);
   }
@@ -243,8 +266,18 @@ async function downloadProfileZip(profile: ProfileResult) {
   return zipMedia(entries, `${username}_profile.zip`);
 }
 
-function saveToast(outcome: "shared" | "downloaded" | "cancelled", extra?: string) {
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function saveToast({ outcome, saved, failed }: ZipOutcome, extra?: string) {
   if (outcome === "cancelled") return;
+  // A partial archive is not a success — say what is missing rather than
+  // handing over an incomplete zip under a green toast.
+  if (failed > 0) {
+    toast.warning(`Saved ${plural(saved, "file")} — ${plural(failed, "file")} could not be fetched.`);
+    return;
+  }
   if (outcome === "shared") {
     toast.success(extra || "Pick Save in the share sheet");
     return;
@@ -369,7 +402,14 @@ export function KeepsakeApp() {
         try {
           await requestMore(tabId, next.cursor, userId, username);
           pages += 1;
-        } catch {
+        } catch (error) {
+          // Auto-fill is best-effort background paging: keep whatever loaded and
+          // stop this tab, but say so instead of stalling with no explanation.
+          if (sessionRef.current === session) {
+            toast.warning(
+              error instanceof Error ? `Stopped loading ${tabId}: ${error.message}` : `Stopped loading more ${tabId}.`,
+            );
+          }
           break;
         } finally {
           pagingLock.current = false;
@@ -462,12 +502,8 @@ export function KeepsakeApp() {
     if (!profile) return;
     setBusyKey("feed-all");
     try {
-      const total =
-        profile.posts.items.length +
-        profile.reels.items.length +
-        profile.stories.items.length +
-        profile.highlights.items.length;
-      saveToast(await downloadProfileZip(profile), `Packed the public archive (${Math.min(total + 1, ZIP_LIMIT)} files)`);
+      const result = await downloadProfileZip(profile);
+      saveToast(result, `Packed the public archive (${plural(result.saved, "file")})`);
     } catch {
       toast.error("Could not zip that profile.");
     } finally {

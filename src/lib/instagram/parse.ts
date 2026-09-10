@@ -145,8 +145,11 @@ function parseToken(raw: string): ParsedQuery | { kind: "stories" } | null {
   return null;
 }
 
+// The leading lookbehind is what stops the host from being matched mid-domain:
+// without it, `notinstagram.com/p/ABC` yields the substring `instagram.com/p/ABC`
+// and a foreign link silently resolves against the real Instagram.
 const URL_IN_TEXT =
-  /(?:https?:\/\/)?(?:(?:www|m|l)\.)?(?:instagram\.com|instagr\.am)\/[^\s<>"']+/gi;
+  /(?<![\w.-])(?:https?:\/\/)?(?:(?:www|m|l)\.)?(?:instagram\.com|instagr\.am)\/[^\s<>"']+/gi;
 
 export function shortcodeFromRedirectTarget(raw: string): string | null {
   const parsed = parseInstagramUrl(raw);
@@ -155,7 +158,9 @@ export function shortcodeFromRedirectTarget(raw: string): string | null {
     const url = new URL(absoluteHref(raw));
     const next = url.searchParams.get("next");
     if (next) {
-      const nested = parseInstagramUrl(next);
+      // Instagram's login bounce uses a relative target (`?next=/p/CODE/`), so
+      // resolve against the redirect's own origin before parsing it.
+      const nested = parseInstagramUrl(new URL(next, url).toString());
       if (nested?.kind === "post") return nested.shortcode;
     }
   } catch {
