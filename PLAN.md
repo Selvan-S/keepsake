@@ -55,7 +55,7 @@ Small, independent, no restructuring. Do these first.
       control (GitHub raw / gist), hardcoded values as fallback. Lets you fix
       every installed APK by editing one text file instead of rebuilding and
       redistributing.
-- [ ] **Cut auto-paging to a preview.** `AUTO_PAGES` in `keepsake-app.tsx`
+- [x] **Cut auto-paging to a preview.** `AUTO_PAGES` in `keepsake-app.tsx`
       currently fetches 3 pages per tab on *every* search. Drop to one page of
       previews, load the rest only when the user asks. Fewer requests is both
       better UX and the most effective account-safety measure available.

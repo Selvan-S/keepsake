@@ -45,14 +45,16 @@ const TABS: { id: ProfileTab; label: string; icon: typeof Grid2x2 }[] = [
   { id: "highlights", label: "Highlights", icon: Bookmark },
 ];
 
-const AUTO_PAGES: Record<ProfileTab, number> = {
-  posts: 3,
-  reels: 3,
-  stories: 0,
-  highlights: 0,
-};
+/**
+ * Pages fetched per "Load the rest" click. A search itself fetches nothing
+ * beyond the first page of previews: every request after that is one the user
+ * asked for. Fewer requests per search is the most effective account-safety
+ * measure available to us, and most searches never need page two.
+ */
+const REST_PAGES_PER_CLICK = 5;
 
-const AUTO_CAP: Record<ProfileTab, number> = {
+/** Ceiling on how much one tab will accumulate, however many clicks. */
+const TAB_CAP: Record<ProfileTab, number> = {
   posts: 120,
   reels: 48,
   stories: 50,
@@ -382,44 +384,46 @@ export function KeepsakeApp() {
     mergeTab(tabId, { items: data.items, cursor: data.cursor ?? null, hasMore: Boolean(data.hasMore) });
   }
 
-  async function fillArchive(session: number, username: string, userId: string | null) {
-    for (const tabId of ["posts", "reels"] as ProfileTab[]) {
-      let pages = 0;
-      while (pages < AUTO_PAGES[tabId]) {
+  /**
+   * Page the given tab as far as REST_PAGES_PER_CLICK / TAB_CAP allow. Only
+   * ever called from the "Load the rest" button — nothing here runs on a plain
+   * search. Because it is user-initiated it can simply decline when another
+   * page request is in flight, rather than busy-waiting for the lock.
+   */
+  async function loadRest(tabId: ProfileTab, username: string, userId: string | null) {
+    if (pagingLock.current) return;
+    const session = sessionRef.current;
+    pagingLock.current = true;
+    setLoadingMore(true);
+    try {
+      for (let pages = 0; pages < REST_PAGES_PER_CLICK; pages += 1) {
         if (sessionRef.current !== session) return;
-        if (pagingLock.current) {
-          await sleep(200);
-          continue;
-        }
         const current = resultRef.current;
         if (!current || !current.ok || current.mode !== "profile") return;
         const next = current.profile[tabId];
         if (!next.hasMore || !next.cursor) break;
-        if (next.items.length >= AUTO_CAP[tabId]) break;
-        pagingLock.current = true;
-        setLoadingMore(true);
+        if (next.items.length >= TAB_CAP[tabId]) break;
         setFillNote(`Loading more ${tabId}… ${next.items.length}+`);
         try {
           await requestMore(tabId, next.cursor, userId, username);
-          pages += 1;
         } catch (error) {
-          // Auto-fill is best-effort background paging: keep whatever loaded and
-          // stop this tab, but say so instead of stalling with no explanation.
+          // Keep whatever loaded and stop, but say so instead of stalling with
+          // no explanation.
           if (sessionRef.current === session) {
             toast.warning(
               error instanceof Error ? `Stopped loading ${tabId}: ${error.message}` : `Stopped loading more ${tabId}.`,
             );
           }
           break;
-        } finally {
-          pagingLock.current = false;
         }
         await sleep(280);
       }
-    }
-    if (sessionRef.current === session) {
-      setLoadingMore(false);
-      setFillNote(null);
+    } finally {
+      pagingLock.current = false;
+      if (sessionRef.current === session) {
+        setLoadingMore(false);
+        setFillNote(null);
+      }
     }
   }
 
@@ -446,9 +450,6 @@ export function KeepsakeApp() {
       setResult(data);
       resultRef.current = data;
       if (!data.ok) toast.error(data.error);
-      if (data.ok && data.mode === "profile") {
-        void fillArchive(session, data.profile.username, data.profile.userId);
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Request failed";
       if (sessionRef.current !== session) return;
@@ -696,10 +697,19 @@ export function KeepsakeApp() {
         ) : null}
 
         {profile && feed?.hasMore ? (
-          <div className="mt-8 flex justify-center">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Button type="button" variant="secondary" size="lg" onClick={() => void onLoadMore()} disabled={loadingMore}>
               {loadingMore ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {loadingMore ? "Loading" : "Load more"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="lg"
+              onClick={() => void loadRest(tab, profile.username, profile.userId)}
+              disabled={loadingMore}
+            >
+              Load the rest
             </Button>
           </div>
         ) : null}
