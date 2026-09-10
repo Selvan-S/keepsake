@@ -67,17 +67,29 @@ Small, independent, no restructuring. Do these first.
 
 ---
 
-## Phase 1 — extract a platform-agnostic core
+## Phase 1 — extract a platform-agnostic core — **DONE**
 
 **Goal:** all Instagram knowledge lives in code with zero platform dependencies,
 so Phase 4 can move it to React Native untouched.
 
-This is a **pure refactor — no behavior change.** The 18 existing tests must stay
-green throughout and are the safety net; add tests for each extracted normalizer
-as you go.
+Done as a pure refactor. `fetch.server.ts` went from 719 lines to 86 and is now
+only the web binding: global `fetch`, `process.env`, and the media proxy.
+Everything else moved to `src/core/instagram/`, which imports no DOM, no Node
+and no framework. The test count went 31 -> 53; the transport seam is what made
+the endpoints testable without a network, including an assertion that a search
+still costs exactly two requests.
 
-`fetch.server.ts` is 704 lines but only 8 of them are `fetch()` calls. The other
-~95% is JSON normalization that has no business knowing about the network.
+Deviations from the sketch below, all deliberate:
+
+- `normalize/json.ts` was added for the shared defensive readers (`asRecord`,
+  `str`, ...) rather than duplicating them per module.
+- `client/constants.ts` holds `IG_APP_ID`, the user-agent and `PREVIEW_COUNT`.
+- `doc-id.ts` moved into `client/` and lost its `process.env` binding: core
+  exposes `loadDocIds`/`memoizeDocIds` and the platform supplies the URL.
+- Relative imports inside `core/` carry explicit `.ts` extensions so the modules
+  run under bare `node --test`, not only through vite.
+- `shortcodeFromHtml` went to `parse.ts`, next to the other text-to-shortcode
+  helpers.
 
 ```
 src/core/                        # no DOM, no Node, no framework imports
@@ -110,12 +122,9 @@ Everything in `core/` takes a transport and never calls `fetch` directly. Web
 supplies a Node-side implementation; React Native supplies one backed by native
 fetch, and the whole `/api/*` tier stops being necessary.
 
-**Also in this phase:** make the cookie jar an instance owned by the session
-rather than a module-level `const`. It is currently process-global, which is
-harmless for one user but blocks per-account sessions in Phase 3.
-
-Verify: `npm test`, `npm run typecheck`, and `/api/resolve` still returns a real
-profile.
+**Also in this phase:** the cookie jar is now an instance owned by
+`InstagramSession`, not a module-level `const`, so Phase 3 can hold one session
+per account. A test asserts two sessions do not share cookies.
 
 ---
 

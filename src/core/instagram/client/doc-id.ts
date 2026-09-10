@@ -1,3 +1,5 @@
+import { globalFetchTransport, type HttpTransport } from "./transport.ts";
+
 /**
  * Instagram's GraphQL uses persisted queries: the client sends a `doc_id`
  * number, not the query text. Those ids go stale whenever Meta redeploys a
@@ -166,7 +168,7 @@ export function mergeDocIds(base: DocIds, override: Partial<DocIds>): DocIds {
 
 export type DocIdLoadOptions = {
   url?: string | undefined;
-  fetchImpl?: typeof fetch;
+  transport?: HttpTransport;
   timeoutMs?: number;
   warn?: (message: string) => void;
 };
@@ -180,7 +182,7 @@ export type DocIdLoadOptions = {
 export async function loadDocIds(options: DocIdLoadOptions = {}): Promise<DocIds> {
   const {
     url,
-    fetchImpl = fetch,
+    transport = globalFetchTransport(),
     timeoutMs = 5000,
     warn = (message: string) => console.warn(message),
   } = options;
@@ -196,7 +198,7 @@ export async function loadDocIds(options: DocIdLoadOptions = {}): Promise<DocIds
   }
 
   try {
-    const res = await fetchImpl(url, {
+    const res = await transport.request(url, {
       headers: { Accept: "application/json" },
       redirect: "follow",
       signal: AbortSignal.timeout(timeoutMs),
@@ -217,19 +219,19 @@ export async function loadDocIds(options: DocIdLoadOptions = {}): Promise<DocIds
   }
 }
 
-let docIdsPromise: Promise<DocIds> | null = null;
+/**
+ * A source of ids for one client. Platform code supplies this -- core has no
+ * business knowing whether the URL came from an env var, a build constant or a
+ * settings screen.
+ */
+export type DocIdProvider = () => Promise<DocIds>;
 
 /**
- * The ids for this process, loaded once on first use. Memoised on the promise
+ * Wrap a loader so the ids are fetched once and shared. Memoised on the promise
  * so concurrent callers share a single request; a failed load still resolves
  * (to the fallback), so this never retries a dead URL on every request.
  */
-export function getDocIds(): Promise<DocIds> {
-  docIdsPromise ??= loadDocIds({ url: process.env[DOC_ID_URL_ENV] });
-  return docIdsPromise;
-}
-
-/** Test seam: drop the memoised load. */
-export function resetDocIdsForTest(): void {
-  docIdsPromise = null;
+export function memoizeDocIds(load: () => Promise<DocIds>): DocIdProvider {
+  let pending: Promise<DocIds> | null = null;
+  return () => (pending ??= load());
 }

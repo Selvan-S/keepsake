@@ -220,3 +220,22 @@ export function parseQuery(input: string): ParseResult {
 
   return { items };
 }
+
+/**
+ * Recover a shortcode from a fetched HTML page, for share links that resolve by
+ * rendering rather than redirecting. Instagram puts the real permalink in the
+ * canonical link or the og:url meta tag.
+ */
+export function shortcodeFromHtml(html: string): string | null {
+  const attrs = [
+    html.match(/rel="canonical"\s+href="([^"]+)"/i)?.[1],
+    html.match(/href="([^"]+)"\s+rel="canonical"/i)?.[1],
+    html.match(/property="og:url"\s+content="([^"]+)"/i)?.[1],
+  ];
+  for (const value of attrs) {
+    if (!value) continue;
+    const code = shortcodeFromRedirectTarget(value.replace(/&/g, "&"));
+    if (code) return code;
+  }
+  return null;
+}

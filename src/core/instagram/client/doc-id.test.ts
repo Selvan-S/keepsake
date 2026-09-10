@@ -5,13 +5,13 @@ import {
   FALLBACK_DOC_IDS,
   STALE_DOC_ID_MESSAGE,
   assertDocIdAccepted,
-  getDocIds,
+  memoizeDocIds,
   isStaleDocIdResponse,
   loadDocIds,
   mergeDocIds,
   parseDocIdConfig,
-  resetDocIdsForTest,
 } from "./doc-id.ts";
+import type { HttpTransport } from "./transport.ts";
 
 test("a rejected persisted query is detected across the shapes Meta uses", () => {
   const rejections: Record<string, unknown>[] = [
@@ -127,7 +127,7 @@ test("a partial document overrides only what it specifies", () => {
 test("a good remote document is used in place of the built-in ids", async () => {
   const ids = await loadDocIds({
     url: "https://example.test/doc-ids.json",
-    fetchImpl: async () => jsonResponse(JSON.stringify({ POST_DOC_ID: "44444444444" })),
+    transport: { request: async () => jsonResponse(JSON.stringify({ POST_DOC_ID: "44444444444" })) },
     warn: silent,
   });
   assert.equal(ids.post, "44444444444");
@@ -135,16 +135,18 @@ test("a good remote document is used in place of the built-in ids", async () => 
 });
 
 test("every remote failure falls back to the built-in ids instead of throwing", async () => {
-  const failures: Record<string, typeof fetch> = {
-    "network error": async () => {
-      throw new Error("ECONNREFUSED");
+  const failures: Record<string, HttpTransport> = {
+    "network error": {
+      request: async () => {
+        throw new Error("ECONNREFUSED");
+      },
     },
-    "http 404": async () => jsonResponse("Not Found", 404),
-    "unparseable body": async () => jsonResponse("<html>rate limited</html>"),
-    "no usable ids": async () => jsonResponse(JSON.stringify({ nothing: "useful" })),
+    "http 404": { request: async () => jsonResponse("Not Found", 404) },
+    "unparseable body": { request: async () => jsonResponse("<html>rate limited</html>") },
+    "no usable ids": { request: async () => jsonResponse(JSON.stringify({ nothing: "useful" })) },
   };
-  for (const [name, fetchImpl] of Object.entries(failures)) {
-    const ids = await loadDocIds({ url: "https://example.test/x", fetchImpl, warn: silent });
+  for (const [name, transport] of Object.entries(failures)) {
+    const ids = await loadDocIds({ url: "https://example.test/x", transport, warn: silent });
     assert.deepEqual(ids, FALLBACK_DOC_IDS, name);
   }
 });
@@ -157,23 +159,27 @@ test("an unset URL falls back and says so loudly", async () => {
   assert.match(warnings[0]!, new RegExp(DOC_ID_URL_ENV));
 });
 
-test("the ids are loaded once per process, not per request", async () => {
-  resetDocIdsForTest();
+test("the ids are loaded once per client, not per request", async () => {
   let calls = 0;
   const load = () =>
     loadDocIds({
       url: "https://example.test/x",
-      fetchImpl: async () => {
-        calls += 1;
-        return jsonResponse(JSON.stringify({ post: "55555555555" }));
+      transport: {
+        request: async () => {
+          calls += 1;
+          return jsonResponse(JSON.stringify({ post: "55555555555" }));
+        },
       },
       warn: silent,
     });
-  await Promise.all([load(), load()]);
-  assert.equal(calls, 2, "loadDocIds itself is unmemoised; getDocIds is the cache");
 
-  resetDocIdsForTest();
-  const shared = await Promise.all([getDocIds(), getDocIds()]);
-  assert.equal(shared[0], shared[1], "concurrent callers share one in-flight load");
-  resetDocIdsForTest();
+  await Promise.all([load(), load()]);
+  assert.equal(calls, 2, "loadDocIds itself is unmemoised; memoizeDocIds is the cache");
+
+  calls = 0;
+  const provider = memoizeDocIds(load);
+  const [a, b] = await Promise.all([provider(), provider()]);
+  assert.equal(calls, 1, "concurrent callers share one in-flight load");
+  assert.equal(a, b);
+  assert.equal(await provider(), a, "and the result is reused afterwards");
 });

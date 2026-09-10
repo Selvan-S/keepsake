@@ -42,9 +42,19 @@ src/components/keepsake-app.tsx  -> all UI state, tabs, downloads, zipping
 src/routes/api/resolve.ts   -> POST a query, get a profile or a single post
 src/routes/api/profile.ts   -> POST a cursor, get the next page of a tab
 src/routes/api/media.ts     -> media proxy (see below)
-src/lib/instagram/parse.ts  -> turns pasted text into usernames/shortcodes
-src/lib/instagram/fetch.server.ts -> talks to Instagram, normalizes responses
+src/core/instagram/          -> all Instagram knowledge, no platform deps
+  parse.ts                  -> turns pasted text into usernames/shortcodes
+  normalize/                -> GraphQL JSON -> our types (pure)
+  client/transport.ts       -> the HttpTransport seam
+  client/session.ts         -> cookie jar + anonymous bootstrap
+  client/endpoints.ts       -> fetchProfile / fetchProfileTab / resolve
+src/lib/instagram/fetch.server.ts -> web binding: global fetch, env, proxy
 ```
+
+`src/core/` imports no DOM, no Node and no framework: it takes an
+`HttpTransport` and never calls `fetch` itself. That is what lets a React Native
+port reuse it as-is (Phase 4) and what lets the endpoints be tested against a
+stub instead of the live site.
 
 Two things are worth knowing before changing any of this:
 
