@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { parseQuery, shortcodeFromRedirectTarget } from "./parse";
 import { isAllowedMediaHost } from "./media-url";
+import { StaleDocIdError, assertDocIdAccepted } from "./doc-id";
 
 const IG_APP_ID = "936619743392459";
 const POST_DOC_ID = "27128499623469141";
@@ -297,6 +298,9 @@ async function graphqlPost(shortcode: string, retried = false): Promise<PostResu
     throw new Error("Instagram returned an unexpected response.");
   }
   const root = asRecord(json);
+  // A rejected doc_id must be named before any of the branches below, which all
+  // read as "that post is gone" and would send the reader to the wrong problem.
+  assertDocIdAccepted(root);
   const data = asRecord(root?.data);
   const info = asRecord(data?.xdt_api__v1__media__shortcode__web_info);
   const items = asArray(info?.items);
@@ -362,6 +366,10 @@ async function graphqlJson(docId: string, variables: Record<string, unknown>): P
   }
   const root = asRecord(json);
   if (!root) throw new Error("Instagram returned an unexpected response.");
+  // Ahead of every caller's own error mapping: fetchTimelinePage in particular
+  // turns a "bad request" summary into "no such profile", which would hide a
+  // stale id behind a confident, wrong answer.
+  assertDocIdAccepted(root);
   return root;
 }
 
@@ -529,7 +537,11 @@ async function fetchHighlightTray(userId: string): Promise<{ hasPublicStory: boo
       highlights.push({ id, title: str(node.title) || "Highlight" });
     }
     return { hasPublicStory: Boolean(user?.has_public_story), highlights };
-  } catch {
+  } catch (error) {
+    // Highlights are best-effort and a failure here must not sink a profile
+    // load — but a stale id is a configuration problem the user can act on, so
+    // it propagates. fetchProfile still swallows it; fetchProfileTab reports it.
+    if (error instanceof StaleDocIdError) throw error;
     return { hasPublicStory: false, highlights: [] };
   }
 }
