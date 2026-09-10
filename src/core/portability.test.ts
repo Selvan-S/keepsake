@@ -46,10 +46,10 @@ const FORBIDDEN: { pattern: RegExp; why: string }[] = [
     // `node --experimental-strip-types` erases types without transforming, so
     // syntax that compiles to runtime code is unavailable. Caught here because
     // the alternative is an opaque parse error from the test runner.
-    pattern: /constructor\s*\([^)]*(private|public|protected|readonly)\s/,
+    pattern: /constructor\s*\([^)]*\b(private|public|protected|readonly)\s/,
     why: "constructor parameter properties need a transform the test runner does not do",
   },
-  { pattern: /enum\s+\w+/, why: "TS enums emit runtime code; strip-only mode cannot" },
+  { pattern: /\benum\s+\w+/, why: "TS enums emit runtime code; strip-only mode cannot" },
 ];
 
 test("core stays free of platform dependencies", () => {

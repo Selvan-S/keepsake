@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import type { PostResult, ProfileFeed, ProfileResult, ProfileTab } from "../instagram/types.ts";
+import type { PostResult, ProfileFeed, ProfileResult } from "../instagram/types.ts";
 import { BatchAccumulator, DEFAULT_BUDGET, estimateBatchCount, formatBytes } from "./batch.ts";
 import { avatarEntry, orderedTabs, planEntries, postsStillNeeded } from "./plan.ts";
 
