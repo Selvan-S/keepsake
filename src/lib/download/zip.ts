@@ -1,6 +1,6 @@
 import type { PostResult, ProfileResult, ProfileTab } from "@/core/instagram/types";
 import { fetchUrl } from "@/lib/media/source";
-import { entriesFromPosts, fileName } from "./naming";
+import { entriesFromPosts, fileName } from "@/core/archive/naming";
 import { shareOrDownload, type SaveOutcome } from "./share";
 
 const ZIP_LIMIT = 100;

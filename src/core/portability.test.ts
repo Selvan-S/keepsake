@@ -42,6 +42,14 @@ const FORBIDDEN: { pattern: RegExp; why: string }[] = [
   { pattern: /from\s+"@\/lib\//, why: "core must not reach back into platform code" },
   { pattern: /from\s+"@\/components\//, why: "core must not depend on components" },
   { pattern: /from\s+"@\/hooks\//, why: "core must not depend on hooks" },
+  {
+    // `node --experimental-strip-types` erases types without transforming, so
+    // syntax that compiles to runtime code is unavailable. Caught here because
+    // the alternative is an opaque parse error from the test runner.
+    pattern: /constructor\s*\([^)]*(private|public|protected|readonly)\s/,
+    why: "constructor parameter properties need a transform the test runner does not do",
+  },
+  { pattern: /enum\s+\w+/, why: "TS enums emit runtime code; strip-only mode cannot" },
 ];
 
 test("core stays free of platform dependencies", () => {

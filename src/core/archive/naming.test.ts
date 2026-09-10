@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import type { PostResult } from "@/core/instagram/types";
+import type { PostResult } from "../instagram/types.ts";
 import { archivePath, entriesFromPosts, extFor, fileName, plural, safeSegment } from "./naming.ts";
 
 function post(overrides: Partial<PostResult> = {}): PostResult {

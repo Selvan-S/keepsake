@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import type { PostResult, ProfileTab } from "@/core/instagram/types";
-import { plural } from "@/lib/download/naming";
+import { plural } from "@/core/archive/naming";
 import {
   downloadFeedZip,
   downloadPostZip,

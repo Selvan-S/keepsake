@@ -1,7 +1,7 @@
 import { Download, Film, Image as ImageIcon, LoaderCircle, Play } from "lucide-react";
 import type { PostResult } from "@/core/instagram/types";
 import { displayUrl } from "@/lib/media/source";
-import { fileName } from "@/lib/download/naming";
+import { fileName } from "@/core/archive/naming";
 import { saveHref } from "@/lib/download/share";
 import { formatDate } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";

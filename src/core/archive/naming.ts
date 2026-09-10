@@ -1,4 +1,4 @@
-import type { PostResult, ProfileTab } from "@/core/instagram/types";
+import type { PostResult, ProfileTab } from "../instagram/types.ts";
 
 /**
  * Archive file naming. Pure and platform-free: the names are part of what the

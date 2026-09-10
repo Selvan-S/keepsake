@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import type { PostResult } from "@/core/instagram/types";
 import { displayUrl } from "@/lib/media/source";
-import { fileName } from "@/lib/download/naming";
+import { fileName } from "@/core/archive/naming";
 import { saveHref } from "@/lib/download/share";
 import { Button } from "@/components/ui/button";
 import { SaveLink } from "./save-link";
