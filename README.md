@@ -38,7 +38,9 @@ Other scripts:
 
 ```
 src/routes/index.tsx        -> renders the whole UI
-src/components/keepsake-app.tsx  -> all UI state, tabs, downloads, zipping
+src/components/keepsake/    -> presentational components (composition in index)
+src/hooks/                  -> use-resolve / use-profile-paging / use-downloads
+src/lib/download/           -> naming, zip assembly, share.ts platform seam
 src/routes/api/resolve.ts   -> POST a query, get a profile or a single post
 src/routes/api/profile.ts   -> POST a cursor, get the next page of a tab
 src/routes/api/media.ts     -> media proxy (see below)

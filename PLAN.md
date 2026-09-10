@@ -128,10 +128,25 @@ per account. A test asserts two sessions do not share cookies.
 
 ---
 
-## Phase 2 — split the UI
+## Phase 2 — split the UI — **DONE**
 
-`keepsake-app.tsx` is 1151 lines holding search, tabs, paging, the grid, the
-lightbox and all download logic. Split by responsibility, not by size:
+`keepsake-app.tsx` was 1229 lines holding search, tabs, paging, the grid, the
+lightbox and all download logic. It is gone; the composition root is
+`src/components/keepsake/index.tsx` at ~160 lines and holds no fetching, no
+zipping and no paging. Shipped roughly as sketched below, with these
+differences:
+
+- `states.tsx` (loading skeleton, empty tab, resolve error) and `save-link.tsx`
+  were added -- small shared pieces the sketch did not name.
+- `tab-bar.tsx` and `download-bar.tsx` were split out of `ProfileHeader`, which
+  composes them.
+- `naming.ts` was split from `zip.ts`: archive file naming is pure, is part of
+  what the user keeps, and is now tested directly.
+- `lib/serial-queue.ts` is the promise queue that replaced `pagingLock`.
+- Tab counts now render only for loaded tabs. The old code showed `0` for a
+  deferred tab, which read as "this account has none" rather than "not fetched".
+
+Original sketch:
 
 ```
 src/components/keepsake/
@@ -160,8 +175,9 @@ makes them replaceable in Phase 4 while the hooks survive.
 `share.ts` is a deliberate seam: web uses the Web Share API and `<a download>`;
 mobile swaps in save-to-camera-roll behind the same signature.
 
-While here: replace the `pagingLock` busy-wait poll
-(`await sleep(200); continue;`) with a proper promise queue.
+The `pagingLock` busy-wait is gone: opening a deferred tab, "Load more" and
+"Load the rest" all go through one `SerialQueue`, so they cannot interleave
+requests to Instagram no matter how the user clicks.
 
 ---
 
