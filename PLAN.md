@@ -166,33 +166,66 @@ accounts) and private accounts you already follow.
 - Keep the User-Agent consistent with how the session actually logged in. A
   hardcoded Pixel 8 UA contradicting the real login device is a signal.
 
-**Session acquisition, in order of preference:**
+### Session acquisition — preferred: external browser + cookie extension
 
-1. **In-app WebView login.** Each user logs into instagram.com in a WebView;
-   harvest the session cookie from the WebView cookie store
-   (`CookieManager` on Android). No password touches our code, 2FA works
-   normally, and it looks like an ordinary login from that device and IP.
-   Store in `EncryptedSharedPreferences` / Keystore — never plaintext.
-2. **Per-device `cookies.txt` import** into app-private encrypted storage.
-   Same security posture if encrypted, but passing credential files around
-   creates more chances to leak one.
+**This is the chosen approach.** The user logs in using a *real browser they
+control*, and the app only ever receives an already-minted session cookie.
+
+Setup, done once per person on their own phone:
+
+1. Install **Quetta** (actively maintained, installs extensions from the Chrome
+   Web Store and Edge Add-ons) or **Firefox for Android** (official add-on
+   support). **Not Kiwi Browser** — archived January 2025, pulled from the Play
+   Store, frozen on Manifest V2.
+2. Install a reputable open-source cookie extension (e.g. Cookie-Editor) from
+   the official store only.
+3. Log into instagram.com in that browser.
+4. Copy the `sessionid`, `ds_user_id` and `csrftoken` values.
+5. Paste into Keepsake's setup screen.
+
+**Why this beats an in-app WebView:** the password never reaches our app at all.
+The user types it into a real browser with a real address bar and TLS indicator.
+A WebView we own could read every keystroke and inject script into the login
+page — that is exactly why Google and Apple ban OAuth in embedded WebViews, and
+it is the concern that matters most when handing an APK to friends. It also
+means no login flow, no 2FA handling and no checkpoint handling to build: the
+browser does all of it, from a normal browser fingerprint on the user's own IP.
+
+**Honest trade-offs:**
+
+- **The extension becomes the trusted component.** A cookie extension can read
+  cookies for every site. Install only well-known open-source ones from the
+  official store.
+- Clunkier than a login button. Mitigate with a guided in-app setup screen that
+  walks through the five steps, plus paste-validation with a clear error.
+- Clipboard exposure. Android 10+ restricts clipboard reads to the focused app,
+  which mitigates most of this; still tell users to clear the clipboard after.
+- Sessions expire. Detect a rejected session and prompt to re-paste rather than
+  failing opaquely.
+- Verify the extension actually works on the current Quetta release — desktop
+  extension support does not guarantee mobile behaviour.
+
+**Implementation notes:** store the pasted values in
+`EncryptedSharedPreferences` / Keystore, never plaintext, never in the APK,
+never in the repo. Validate on paste with one cheap authenticated request.
+
+### Fallbacks, in order
+
+1. **Desktop `cookies.txt` import**, exported by each person on their own
+   machine into app-private encrypted storage. Same posture if encrypted, but
+   passing credential files around creates more chances to leak one.
+2. **In-app WebView login.** More convenient, but our app renders the login form
+   and *could* read the password and 2FA codes. Only consider it if the paste
+   flow proves too fiddly, and be explicit with users about what they are
+   trusting. If built: **never auto-fill credentials** and **never inject JS
+   into the login page** — both turn "unusual" into "unmistakably automated",
+   and both are what would make this app a credential harvester if the APK
+   leaked or were modified.
 3. **Never:** one shared account or cookie across the group. Multiple devices
    and IPs on one `sessionid` is a loud bot signal, a single point of failure,
    and hands everyone everyone else's account.
 
-**Two hard rules if the WebView route is built:**
-
-- **Never auto-fill credentials.**
-- **Never inject JS into the login page.**
-
-Both turn "unusual" into "unmistakably automated", and both are what would make
-this app a credential harvester if the APK leaked or were modified. Note the
-inherent tension: being able to read cookies out of a WebView is exactly what
-makes a WebView a security concern. Custom Tabs is safer and gives no cookie
-access at all — which is why it cannot be used here. Be upfront with anyone you
-hand the APK to about what they are trusting.
-
-Expect a one-time new-device checkpoint on first login. That is normal.
+Expect a one-time new-device checkpoint on first login in the browser. Normal.
 
 ---
 
@@ -219,6 +252,37 @@ What moves after Phases 1–2:
 Android-first. Sideloaded APK, no store.
 
 ---
+
+## Starting the next session
+
+Paste this to pick up where the last session left off:
+
+```
+Read PLAN.md, then work through Phase 0.
+
+Context: Keepsake is a personal Instagram archiver, local-only, distributed
+as a sideloaded APK to a few friends. Never an app store. Node 22.12+ —
+run `nvm use` first, the default on this machine is Node 20 and the tests
+will not run on it.
+
+Phase 0, in order:
+1. Detect a stale-doc_id rejection in fetch.server.ts and surface a clear
+   error naming the PLAN.md runbook, instead of a generic failure.
+2. Fetch the three doc_ids at startup from a remote URL with the current
+   hardcoded values as fallback, so a rotation can be fixed without
+   rebuilding every APK. Ask me for the URL.
+3. Cut AUTO_PAGES in keepsake-app.tsx to a single page of previews, and
+   load the rest only on explicit user action.
+4. Add .npmrc with engine-strict=true.
+
+Keep `npm test`, `npm run typecheck`, `npm run lint` and `npm run build`
+green, and commit each item separately. Do not start Phase 1 in the same
+session without telling me first.
+```
+
+For a later session, swap the Phase 0 block for the phase you are on. Phase 1 is
+a pure refactor — say so explicitly in the prompt, because "no behavior change,
+the 18 tests must stay green" is the constraint that keeps it safe.
 
 ## Standing constraints
 
