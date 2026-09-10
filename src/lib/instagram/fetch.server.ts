@@ -9,12 +9,9 @@ import type {
 } from "./types";
 import { parseQuery, shortcodeFromRedirectTarget } from "./parse";
 import { isAllowedMediaHost } from "./media-url";
-import { StaleDocIdError, assertDocIdAccepted } from "./doc-id";
+import { StaleDocIdError, assertDocIdAccepted, getDocIds } from "./doc-id";
 
 const IG_APP_ID = "936619743392459";
-const POST_DOC_ID = "27128499623469141";
-const TIMELINE_DOC_ID = "34579740524958711";
-const HIGHLIGHTS_TRAY_DOC_ID = "9957820854288654";
 const UA =
   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.94 Mobile Safari/537.36";
 
@@ -263,13 +260,13 @@ async function resolveShareUrl(href: string, depth = 0): Promise<string> {
 }
 
 async function graphqlPost(shortcode: string, retried = false): Promise<PostResult> {
-  await bootstrapSession();
+  const [docIds] = await Promise.all([getDocIds(), bootstrapSession()]);
   const body = new URLSearchParams({
     variables: JSON.stringify({
       shortcode,
       __relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider: false,
     }),
-    doc_id: POST_DOC_ID,
+    doc_id: docIds.post,
     server_timestamps: "true",
   });
   const res = await fetch("https://www.instagram.com/graphql/query", {
@@ -385,7 +382,7 @@ async function fetchTimelinePage(username: string, cursor?: string | null): Prom
     __relay_internal__pv__PolarisFeedShareMenurelayprovider: false,
   };
   if (cursor) variables.after = cursor;
-  const root = await graphqlJson(TIMELINE_DOC_ID, variables);
+  const root = await graphqlJson((await getDocIds()).timeline, variables);
   const errors = asArray(root.errors);
   if (errors.length > 0 && !asRecord(root.data)) {
     const first = asRecord(errors[0]);
@@ -517,7 +514,7 @@ async function fetchStories(userId: string): Promise<ProfileFeed> {
 
 async function fetchHighlightTray(userId: string): Promise<{ hasPublicStory: boolean; highlights: { id: string; title: string }[] }> {
   try {
-    const root = await graphqlJson(HIGHLIGHTS_TRAY_DOC_ID, {
+    const root = await graphqlJson((await getDocIds()).highlightsTray, {
       user_id: userId,
       include_chaining: false,
       include_reel: true,

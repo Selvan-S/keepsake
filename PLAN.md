@@ -24,6 +24,12 @@ number, not the query text. `POST_DOC_ID`, `TIMELINE_DOC_ID` and
 They go stale whenever Meta redeploys a changed query shape. **When the app
 suddenly returns nothing, check these before debugging anything else.**
 
+A rejected id is now detected and reported as such (`src/lib/instagram/doc-id.ts`)
+rather than surfacing as "no such profile". The three ids are loaded at startup
+from `KEEPSAKE_DOC_ID_URL`, falling back to the values compiled into the build,
+so a rotation is fixed by editing that one hosted file — see the README for the
+file format.
+
 ### Runbook: refreshing the doc_ids
 
 1. Open `instagram.com` in Chrome → DevTools → Network
@@ -41,11 +47,11 @@ suddenly returns nothing, check these before debugging anything else.**
 
 Small, independent, no restructuring. Do these first.
 
-- [ ] **Clear `doc_id` failure message.** Detect the rejection shape and surface
+- [x] **Clear `doc_id` failure message.** Detect the rejection shape and surface
       "Instagram changed its internal API — the doc_ids need refreshing (see
       PLAN.md)" instead of a generic error. Highest value per line of code:
       without it, a stale id looks like a bug in working code.
-- [ ] **Remote doc_id config.** Fetch the three ids at startup from a URL you
+- [x] **Remote doc_id config.** Fetch the three ids at startup from a URL you
       control (GitHub raw / gist), hardcoded values as fallback. Lets you fix
       every installed APK by editing one text file instead of rebuilding and
       redistributing.

@@ -1,6 +1,17 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { STALE_DOC_ID_MESSAGE, assertDocIdAccepted, isStaleDocIdResponse } from "./doc-id.ts";
+import {
+  DOC_ID_URL_ENV,
+  FALLBACK_DOC_IDS,
+  STALE_DOC_ID_MESSAGE,
+  assertDocIdAccepted,
+  getDocIds,
+  isStaleDocIdResponse,
+  loadDocIds,
+  mergeDocIds,
+  parseDocIdConfig,
+  resetDocIdsForTest,
+} from "./doc-id.ts";
 
 test("a rejected persisted query is detected across the shapes Meta uses", () => {
   const rejections: Record<string, unknown>[] = [
@@ -54,4 +65,115 @@ test("assertDocIdAccepted throws the runbook message, and is silent otherwise", 
     },
   );
   assert.doesNotThrow(() => assertDocIdAccepted({ data: { ok: true } }));
+});
+
+/* -------------------------------------------------------------------------- */
+/* Remote configuration                                                        */
+/* -------------------------------------------------------------------------- */
+
+const silent = () => {};
+
+function jsonResponse(body: string, status = 200): Response {
+  return new Response(body, { status });
+}
+
+test("a config document written straight from the PLAN.md runbook is understood", () => {
+  const parsed = parseDocIdConfig(
+    JSON.stringify({
+      POST_DOC_ID: "11111111111",
+      TIMELINE_DOC_ID: "22222222222",
+      HIGHLIGHTS_TRAY_DOC_ID: "33333333333",
+    }),
+  );
+  assert.deepEqual(parsed, {
+    post: "11111111111",
+    timeline: "22222222222",
+    highlightsTray: "33333333333",
+  });
+});
+
+test("camelCase keys, a doc_ids wrapper, and JSON numbers all work", () => {
+  assert.deepEqual(parseDocIdConfig(JSON.stringify({ post: "12345", highlightsTray: "67890" })), {
+    post: "12345",
+    highlightsTray: "67890",
+  });
+  assert.deepEqual(parseDocIdConfig(JSON.stringify({ doc_ids: { timeline: "12345" } })), {
+    timeline: "12345",
+  });
+  assert.deepEqual(parseDocIdConfig(JSON.stringify({ timeline: 27128499623469 })), {
+    timeline: "27128499623469",
+  });
+});
+
+test("malformed values are skipped rather than poisoning the config", () => {
+  // A typo in one field must not cost the fields that were written correctly.
+  const parsed = parseDocIdConfig(
+    JSON.stringify({ post: "not-a-number", timeline: "22222222222", unrelated: "33333333333" }),
+  );
+  assert.deepEqual(parsed, { timeline: "22222222222" });
+
+  for (const text of ["", "not json", "null", "[]", '"a string"', "{}"]) {
+    assert.deepEqual(parseDocIdConfig(text), {}, text);
+  }
+});
+
+test("a partial document overrides only what it specifies", () => {
+  const merged = mergeDocIds(FALLBACK_DOC_IDS, { timeline: "99999999999" });
+  assert.equal(merged.timeline, "99999999999");
+  assert.equal(merged.post, FALLBACK_DOC_IDS.post);
+  assert.equal(merged.highlightsTray, FALLBACK_DOC_IDS.highlightsTray);
+});
+
+test("a good remote document is used in place of the built-in ids", async () => {
+  const ids = await loadDocIds({
+    url: "https://example.test/doc-ids.json",
+    fetchImpl: async () => jsonResponse(JSON.stringify({ POST_DOC_ID: "44444444444" })),
+    warn: silent,
+  });
+  assert.equal(ids.post, "44444444444");
+  assert.equal(ids.timeline, FALLBACK_DOC_IDS.timeline);
+});
+
+test("every remote failure falls back to the built-in ids instead of throwing", async () => {
+  const failures: Record<string, typeof fetch> = {
+    "network error": async () => {
+      throw new Error("ECONNREFUSED");
+    },
+    "http 404": async () => jsonResponse("Not Found", 404),
+    "unparseable body": async () => jsonResponse("<html>rate limited</html>"),
+    "no usable ids": async () => jsonResponse(JSON.stringify({ nothing: "useful" })),
+  };
+  for (const [name, fetchImpl] of Object.entries(failures)) {
+    const ids = await loadDocIds({ url: "https://example.test/x", fetchImpl, warn: silent });
+    assert.deepEqual(ids, FALLBACK_DOC_IDS, name);
+  }
+});
+
+test("an unset URL falls back and says so loudly", async () => {
+  const warnings: string[] = [];
+  const ids = await loadDocIds({ url: undefined, warn: (m) => warnings.push(m) });
+  assert.deepEqual(ids, FALLBACK_DOC_IDS);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, new RegExp(DOC_ID_URL_ENV));
+});
+
+test("the ids are loaded once per process, not per request", async () => {
+  resetDocIdsForTest();
+  let calls = 0;
+  const load = () =>
+    loadDocIds({
+      url: "https://example.test/x",
+      fetchImpl: async () => {
+        calls += 1;
+        return jsonResponse(JSON.stringify({ post: "55555555555" }));
+      },
+      warn: silent,
+    });
+  await Promise.all([load(), load()]);
+  assert.equal(calls, 2, "loadDocIds itself is unmemoised; getDocIds is the cache");
+
+  resetDocIdsForTest();
+  const shared = await Promise.all([getDocIds(), getDocIds()]);
+  assert.equal(shared[0], shared[1], "concurrent callers share one in-flight load");
+  resetDocIdsForTest();
 });
