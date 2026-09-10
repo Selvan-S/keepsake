@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 function safeFilename(name: string): string {
-  return name.replace(/[^\w.\-]+/g, "_").slice(0, 120) || "keepsake-media";
+  return name.replace(/[^\w.-]+/g, "_").slice(0, 120) || "keepsake-media";
 }
 
 export const Route = createFileRoute("/api/media")({
