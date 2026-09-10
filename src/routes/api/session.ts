@@ -17,6 +17,7 @@ export const Route = createFileRoute("/api/session")({
 
       POST: async ({ request }) => {
         let body: {
+          bundle?: unknown;
           sessionId?: unknown;
           dsUserId?: unknown;
           csrfToken?: unknown;
@@ -30,6 +31,7 @@ export const Route = createFileRoute("/api/session")({
         const asText = (value: unknown) => (typeof value === "string" ? value : "");
         const { signIn } = await import("@/lib/instagram/fetch.server");
         const result = await signIn({
+          bundle: asText(body.bundle),
           sessionId: asText(body.sessionId),
           dsUserId: asText(body.dsUserId),
           csrfToken: asText(body.csrfToken),

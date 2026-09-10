@@ -116,9 +116,10 @@ export function sessionStatus(): SessionStatus {
  * clear reason, instead of looking like "that profile has no stories" later.
  */
 export async function signIn(input: {
-  sessionId: string;
-  dsUserId: string;
-  csrfToken: string;
+  bundle?: string;
+  sessionId?: string;
+  dsUserId?: string;
+  csrfToken?: string;
   userAgent?: string;
 }): Promise<{ ok: true; username: string } | { ok: false; error: string }> {
   const parsed = parseCredentials(input);

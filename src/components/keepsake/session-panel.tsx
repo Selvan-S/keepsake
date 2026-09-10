@@ -9,12 +9,14 @@ const STEPS = [
   "Install Firefox for Android, or Quetta — both support real extensions. Not Kiwi: it was archived in January 2025.",
   "From the official add-on store, install a reputable open-source cookie extension such as Cookie-Editor.",
   "Log in to instagram.com in that browser. Expect a one-time new-device check.",
-  "Open the extension on instagram.com and copy sessionid, ds_user_id and csrftoken.",
-  "Paste them below, then clear your clipboard.",
+  "On instagram.com, open the extension and use Export — it copies every cookie as JSON.",
+  "Paste it below, then clear your clipboard.",
 ];
 
 export function SessionPanel({ session }: { session: SessionApi }) {
   const [open, setOpen] = useState(false);
+  const [manual, setManual] = useState(false);
+  const [bundle, setBundle] = useState("");
   const [sessionId, setSessionId] = useState("");
   const [dsUserId, setDsUserId] = useState("");
   const [csrfToken, setCsrfToken] = useState("");
@@ -22,6 +24,7 @@ export function SessionPanel({ session }: { session: SessionApi }) {
 
   /** Clear the inputs the moment they are no longer needed. */
   const clearFields = () => {
+    setBundle("");
     setSessionId("");
     setDsUserId("");
     setCsrfToken("");
@@ -29,9 +32,9 @@ export function SessionPanel({ session }: { session: SessionApi }) {
   };
 
   const submit = async () => {
-    const ok = await session.signIn({ sessionId, dsUserId, csrfToken, userAgent });
-    // Wipe on success, and on failure too: leaving a rejected sessionid sitting
-    // in a form field serves nobody.
+    const ok = await session.signIn({ bundle, sessionId, dsUserId, csrfToken, userAgent });
+    // Wipe on success, and on failure too: leaving a rejected export sitting in
+    // a form field serves nobody.
     clearFields();
     if (ok) setOpen(false);
   };
@@ -107,17 +110,48 @@ export function SessionPanel({ session }: { session: SessionApi }) {
             ))}
           </ol>
 
-          <div className="space-y-2">
-            <Field label="sessionid" value={sessionId} onChange={setSessionId} />
-            <Field label="ds_user_id" value={dsUserId} onChange={setDsUserId} />
-            <Field label="csrftoken" value={csrfToken} onChange={setCsrfToken} />
-            <Field
-              label="User-Agent (optional)"
-              value={userAgent}
-              onChange={setUserAgent}
-              hint="Paste the User-Agent of the browser you logged in with. Without it, requests claim to be a Pixel 8, which contradicts the real login device."
+          <label className="block">
+            <span className="text-xs text-subtle">Cookie export (JSON)</span>
+            <textarea
+              value={bundle}
+              onChange={(e) => setBundle(e.target.value)}
+              rows={4}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              placeholder='[{"name":"sessionid","value":"…"}, …]'
+              className="mt-1 w-full rounded-lg bg-bg px-3 py-2 font-mono text-xs text-fg shadow-[var(--shadow-border)] outline-none placeholder:text-subtle focus:shadow-[var(--shadow-border-hover)]"
             />
+            <span className="mt-1 block text-xs leading-relaxed text-subtle">
+              Paste the whole export. Only sessionid, ds_user_id and csrftoken are read from it —
+              every other cookie is ignored and never stored.
+            </span>
+          </label>
+
+          <div>
+            <button
+              type="button"
+              className="text-xs text-subtle underline-offset-2 hover:text-muted hover:underline"
+              onClick={() => setManual((v) => !v)}
+              aria-expanded={manual}
+            >
+              {manual ? "Hide individual fields" : "Or paste the three values individually"}
+            </button>
+            {manual ? (
+              <div className="mt-2 space-y-2">
+                <Field label="sessionid" value={sessionId} onChange={setSessionId} secret />
+                <Field label="ds_user_id" value={dsUserId} onChange={setDsUserId} />
+                <Field label="csrftoken" value={csrfToken} onChange={setCsrfToken} secret />
+              </div>
+            ) : null}
           </div>
+
+          <Field
+            label="User-Agent (optional)"
+            value={userAgent}
+            onChange={setUserAgent}
+            hint="Paste the User-Agent of the browser you logged in with. Without it, requests claim to be a Pixel 8, which contradicts the real login device."
+          />
 
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" onClick={() => void submit()} disabled={session.busy}>
@@ -143,11 +177,13 @@ function Field({
   value,
   onChange,
   hint,
+  secret,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   hint?: string;
+  secret?: boolean;
 }) {
   return (
     <label className="block">
@@ -155,9 +191,9 @@ function Field({
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        // Treated as a secret: no autofill, no spellcheck, no autocapitalise,
-        // and never persisted by the browser.
-        type="password"
+        // Secrets are masked and kept away from autofill and spellcheck; the
+        // User-Agent and account id are neither secret nor worth hiding.
+        type={secret ? "password" : "text"}
         autoComplete="off"
         autoCapitalize="off"
         spellCheck={false}

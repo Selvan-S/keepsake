@@ -141,8 +141,13 @@ injects script into one — that is the entire reason for the clunkier flow.
 2. From the official add-on store, install a well-known open-source cookie
    extension such as Cookie-Editor.
 3. Log in to `instagram.com` there. Expect a one-time new-device check.
-4. Copy `sessionid`, `ds_user_id` and `csrftoken`.
-5. Paste them into the setup panel, then **clear your clipboard**.
+4. On `instagram.com`, open the extension and hit **Export** — it copies every
+   cookie as JSON.
+5. Paste the whole export into the setup panel, then **clear your clipboard**.
+
+Only `sessionid`, `ds_user_id` and `csrftoken` are read out of it; every other
+cookie in the export is ignored and never stored. If you would rather not paste
+the lot, the panel also takes the three values individually.
 
 Also paste your browser's **User-Agent** if you can. Without it, requests claim
 to be a Pixel 8, which contradicts the device the session was actually created

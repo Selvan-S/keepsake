@@ -112,3 +112,59 @@ test("redact never exposes the session token", () => {
   assert.match(line, /\*\*\*/);
   assert.match(line, new RegExp(DS_USER_ID));
 });
+
+test("a Cookie-Editor export pasted as the bundle is the primary path", () => {
+  // This is what the extension actually hands you: every cookie for the site,
+  // with the fields we need buried among a dozen we do not.
+  const exported = JSON.stringify([
+    { name: "ig_did", value: "AAA", domain: ".instagram.com", path: "/", secure: true },
+    { name: "mid", value: "BBB", domain: ".instagram.com", path: "/" },
+    { name: "csrftoken", value: CSRF, domain: ".instagram.com", path: "/" },
+    { name: "ds_user_id", value: DS_USER_ID, domain: ".instagram.com", path: "/" },
+    { name: "sessionid", value: SESSION_ID, domain: ".instagram.com", path: "/", httpOnly: true },
+    { name: "rur", value: "CCC", domain: ".instagram.com", path: "/" },
+  ]);
+  const parsed = parseCredentials({ bundle: exported });
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.ok && parsed.credentials, {
+    sessionId: SESSION_ID,
+    dsUserId: DS_USER_ID,
+    csrfToken: CSRF,
+  });
+});
+
+test("a logged-out export is diagnosed as logged-out, not as an empty form", () => {
+  // Exporting from a tab where you are signed out yields real cookies, just
+  // not these. "Fill in the boxes" would be unhelpful and wrong.
+  const exported = JSON.stringify([
+    { name: "ig_did", value: "AAA" },
+    { name: "csrftoken", value: CSRF },
+  ]);
+  const parsed = parseCredentials({ bundle: exported });
+  assert.equal(parsed.ok, false);
+  assert.match(parsed.ok === false ? parsed.error : "", /logged in/);
+  assert.match(parsed.ok === false ? parsed.error : "", /sessionid/);
+});
+
+test("an explicit field still wins over the same cookie in the bundle", () => {
+  const other = "99999999999%3AZzZzZzZzZz%3A26%3AQQ";
+  const parsed = parseCredentials({
+    bundle: JSON.stringify([
+      { name: "sessionid", value: SESSION_ID },
+      { name: "ds_user_id", value: DS_USER_ID },
+      { name: "csrftoken", value: CSRF },
+    ]),
+    sessionId: other,
+  });
+  assert.equal(parsed.ok && parsed.credentials.sessionId, other);
+});
+
+test("a bundle of the wrong kind of JSON is refused, not half-read", () => {
+  for (const bundle of ["{}", "[]", '[{"foo":"bar"}]', "not json at all"]) {
+    const parsed = parseCredentials({ bundle });
+    assert.equal(parsed.ok, false, bundle);
+    // Nothing recognisable came out, so the advice is "that is not an export"
+    // rather than "your export is missing a cookie" -- different mistakes.
+    assert.match(parsed.ok === false ? parsed.error : "", /does not look like a cookie export/, bundle);
+  }
+});

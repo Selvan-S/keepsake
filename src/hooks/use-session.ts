@@ -4,9 +4,11 @@ import { toast } from "sonner";
 export type SessionState = { authenticated: boolean; username: string | null };
 
 export type SignInInput = {
-  sessionId: string;
-  dsUserId: string;
-  csrfToken: string;
+  /** The whole JSON export from a cookie extension — the usual path. */
+  bundle?: string;
+  sessionId?: string;
+  dsUserId?: string;
+  csrfToken?: string;
   userAgent?: string;
 };
 

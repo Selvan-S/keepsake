@@ -128,17 +128,42 @@ export function extractCookies(input: string): Partial<Record<string, string>> {
  * cookie header into any one box works.
  */
 export function parseCredentials(input: {
-  sessionId: string;
-  dsUserId: string;
-  csrfToken: string;
+  /**
+   * The whole export from a cookie extension, which is how people actually
+   * have these: Cookie-Editor and friends hand you a JSON array of every
+   * cookie for the site. Only the three we need are read out of it; the rest
+   * are ignored and never stored.
+   */
+  bundle?: string;
+  sessionId?: string;
+  dsUserId?: string;
+  csrfToken?: string;
   userAgent?: string;
 }): CredentialParse {
   // Anything pasted into any box may carry all three; later boxes do not
   // overwrite values an earlier one already supplied explicitly.
   const scanned: Record<string, string> = {};
-  for (const raw of [input.sessionId, input.dsUserId, input.csrfToken]) {
-    for (const [key, value] of Object.entries(extractCookies(raw || ""))) {
+  let bundleYieldedCookies = false;
+  for (const raw of [input.bundle, input.sessionId, input.dsUserId, input.csrfToken]) {
+    const found = extractCookies(raw || "");
+    if (raw === input.bundle && Object.keys(found).length > 0) bundleYieldedCookies = true;
+    for (const [key, value] of Object.entries(found)) {
       if (value && !scanned[key]) scanned[key] = value;
+    }
+  }
+
+  // A paste that yielded nothing recognisable is a different mistake from an
+  // export that is genuinely missing a cookie, and deserves different advice.
+  if ((input.bundle || "").trim() && !bundleYieldedCookies) {
+    const hasOtherInput = [input.sessionId, input.dsUserId, input.csrfToken].some((v) =>
+      (v || "").trim(),
+    );
+    if (!hasOtherInput) {
+      return {
+        ok: false,
+        error:
+          "That does not look like a cookie export. Use the extension's Export button on instagram.com and paste the whole thing.",
+      };
     }
   }
 
@@ -159,7 +184,16 @@ export function parseCredentials(input: {
 
   const missing = (Object.keys(SHAPES) as (keyof typeof SHAPES)[]).filter((f) => !resolved[f]);
   if (missing.length > 0) {
-    return { ok: false, error: `Missing ${missing.map((f) => LABELS[f]).join(", ")}.` };
+    const names = missing.map((f) => LABELS[f]).join(", ");
+    // If they pasted an export and it simply did not contain these, the useful
+    // advice is "you were logged out", not "fill in the boxes".
+    if (bundleYieldedCookies) {
+      return {
+        ok: false,
+        error: `That export has no ${names}. Export the cookies again from a tab where you are logged in to instagram.com.`,
+      };
+    }
+    return { ok: false, error: `Missing ${names}.` };
   }
   const malformed = (Object.keys(SHAPES) as (keyof typeof SHAPES)[]).filter(
     (f) => !SHAPES[f].test(resolved[f]),
