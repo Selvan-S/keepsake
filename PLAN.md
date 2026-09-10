@@ -59,7 +59,7 @@ Small, independent, no restructuring. Do these first.
       currently fetches 3 pages per tab on *every* search. Drop to one page of
       previews, load the rest only when the user asks. Fewer requests is both
       better UX and the most effective account-safety measure available.
-- [ ] **`.npmrc` with `engine-strict=true`** so a friend on Node 20 gets a
+- [x] **`.npmrc` with `engine-strict=true`** so a friend on Node 20 gets a
       readable error at install time rather than a confusing runtime failure.
 
 ---
