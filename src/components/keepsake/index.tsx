@@ -4,11 +4,13 @@ import type { PostResult } from "@/core/instagram/types";
 import { useDownloads } from "@/hooks/use-downloads";
 import { useProfilePaging } from "@/hooks/use-profile-paging";
 import { useResolve } from "@/hooks/use-resolve";
+import { useSession } from "@/hooks/use-session";
 import { cn } from "@/lib/utils";
 import { HighlightFilter, LoadMoreBar, MediaGrid, TabLoading } from "./media-grid";
 import { Lightbox } from "./lightbox";
 import { ProfileHeader } from "./profile-header";
 import { SearchBar } from "./search-bar";
+import { SessionPanel } from "./session-panel";
 import { EmptyTab, LoadingState, ResolveError } from "./states";
 
 /**
@@ -20,6 +22,7 @@ export function KeepsakeApp() {
   const resolve = useResolve();
   const paging = useProfilePaging(resolve);
   const downloads = useDownloads(resolve, paging);
+  const session = useSession();
 
   const { loading, result, profile, tab, setTab, rawPosts } = resolve;
   const [lightbox, setLightbox] = useState<{ post: PostResult; index: number } | null>(null);
@@ -96,6 +99,7 @@ export function KeepsakeApp() {
             onPaste={() => void resolve.pasteAndGo()}
             loading={loading}
           />
+          <SessionPanel session={session} />
         </section>
 
         {loading ? <LoadingState /> : null}

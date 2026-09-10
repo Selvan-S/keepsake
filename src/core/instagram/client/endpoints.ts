@@ -13,6 +13,7 @@ import { profileFromUser } from "../normalize/profile.ts";
 import { PREVIEW_COUNT } from "./constants.ts";
 import { graphqlQuery } from "./graphql.ts";
 import type { DocIdProvider } from "./doc-id.ts";
+import { SessionRejectedError, isSessionRejected } from "./auth.ts";
 import type { InstagramSession } from "./session.ts";
 
 /** Everything an endpoint needs, with no platform types in sight. */
@@ -86,6 +87,12 @@ export async function fetchPost(
   );
 
   if (status === 401 || status === 403) {
+    // With a pasted login, re-bootstrapping would silently drop it and retry
+    // anonymously -- the user would see worse results and no explanation. Say
+    // the session was rejected instead.
+    if (client.session.isAuthenticated && isSessionRejected(status, root)) {
+      throw new SessionRejectedError();
+    }
     if (!retried) {
       await client.session.bootstrap(true);
       return fetchPost(client, shortcode, true);
@@ -208,6 +215,7 @@ async function fetchHighlightTray(client: InstagramClient, userId: string) {
     // load -- but a stale id is a configuration problem the user can act on, so
     // it propagates rather than showing a silently empty tab.
     if (error instanceof Error && error.name === "StaleDocIdError") throw error;
+    if (error instanceof SessionRejectedError) throw error;
     return { hasPublicStory: false, highlights: [] };
   }
 }
@@ -309,6 +317,50 @@ export async function fetchProfileTab(
   if (tab === "reels") return fetchReelsPage(client, id, cursor);
   if (tab === "stories") return fetchStories(client, id);
   return (await fetchHighlights(client, id)).feed;
+}
+
+/**
+ * Confirm a pasted session actually works, and report whose it is.
+ *
+ * One request, against the account's own profile: cheap, uninteresting
+ * traffic, and it returns the username so the UI can show who is signed in
+ * rather than just "authenticated".
+ */
+export async function verifySession(
+  client: InstagramClient,
+): Promise<{ ok: true; username: string } | { ok: false; error: string }> {
+  const { session } = client;
+  const id = session.accountId;
+  if (!id) return { ok: false, error: "No session is configured." };
+  try {
+    const res = await session.request(`https://www.instagram.com/api/v1/users/${id}/info/`, {
+      headers: session.headers({ Accept: "application/json" }),
+      redirect: "follow",
+      signal: AbortSignal.timeout(15000),
+    });
+    const text = await res.text();
+    let root: Record<string, unknown> | null = null;
+    try {
+      root = asRecord(JSON.parse(text));
+    } catch {
+      root = null;
+    }
+    if (res.status === 429) {
+      return { ok: false, error: "Instagram is rate-limiting this network. Try again shortly." };
+    }
+    if (isSessionRejected(res.status, root)) {
+      return { ok: false, error: "Instagram rejected those cookies. Check you copied them from a logged-in instagram.com tab." };
+    }
+    const user = asRecord(root?.user);
+    const username = str(user?.username);
+    if (!username) {
+      return { ok: false, error: "Instagram accepted the request but returned no account. Try pasting fresh cookies." };
+    }
+    return { ok: true, username };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not reach Instagram.";
+    return { ok: false, error: message };
+  }
 }
 
 export async function resolveInstagramQuery(

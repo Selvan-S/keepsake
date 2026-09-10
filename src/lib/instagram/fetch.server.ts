@@ -13,8 +13,10 @@ import { globalFetchTransport } from "@/core/instagram/client/transport";
 import {
   fetchProfileTab as coreFetchProfileTab,
   resolveInstagramQuery as coreResolveInstagramQuery,
+  verifySession,
   type InstagramClient,
 } from "@/core/instagram/client/endpoints";
+import { parseCredentials } from "@/core/instagram/client/auth";
 import { DEFAULT_USER_AGENT } from "@/core/instagram/client/constants";
 import { isAllowedMediaHost } from "./media-url";
 
@@ -83,4 +85,65 @@ export async function fetchRemoteMedia(url: string): Promise<Response> {
   });
   if (length) headers.set("content-length", length);
   return new Response(res.body, { status: 200, headers });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Optional authenticated session                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The signed-in account's handle, remembered only so the UI can show who is
+ * signed in. The credentials themselves live in the session's cookie jar, in
+ * this process's memory, and are never written to disk, never logged, and never
+ * sent back to the browser.
+ *
+ * That means a server restart signs the user out. That is a deliberate
+ * trade-off for the web build: the alternative is a secret at rest with no
+ * keystore to put it in. Phase 4 has EncryptedSharedPreferences and can
+ * persist properly.
+ */
+let signedInAs: string | null = null;
+
+export type SessionStatus = { authenticated: boolean; username: string | null };
+
+export function sessionStatus(): SessionStatus {
+  return { authenticated: client.session.isAuthenticated, username: signedInAs };
+}
+
+/**
+ * Accept pasted cookies, but only keep them if Instagram actually accepts
+ * them. Validating here means a bad paste fails at the setup screen with a
+ * clear reason, instead of looking like "that profile has no stories" later.
+ */
+export async function signIn(input: {
+  sessionId: string;
+  dsUserId: string;
+  csrfToken: string;
+  userAgent?: string;
+}): Promise<{ ok: true; username: string } | { ok: false; error: string }> {
+  const parsed = parseCredentials(input);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const previous = sessionStatus();
+  client.session.authenticate(parsed.credentials);
+  const verified = await verifySession(client);
+  if (!verified.ok) {
+    // Never keep a login we could not confirm.
+    client.session.signOut();
+    signedInAs = null;
+    if (previous.authenticated) {
+      // The old session is gone either way; say so rather than implying it
+      // still works.
+      return { ok: false, error: `${verified.error} You are now signed out.` };
+    }
+    return { ok: false, error: verified.error };
+  }
+  signedInAs = verified.username;
+  return { ok: true, username: verified.username };
+}
+
+export function signOut(): SessionStatus {
+  client.session.signOut();
+  signedInAs = null;
+  return sessionStatus();
 }

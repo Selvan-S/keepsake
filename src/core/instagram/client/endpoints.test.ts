@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { FALLBACK_DOC_IDS } from "./doc-id.ts";
-import { fetchProfile, fetchProfileTab, type InstagramClient } from "./endpoints.ts";
+import { fetchProfile, fetchProfileTab, verifySession, type InstagramClient } from "./endpoints.ts";
 import { InstagramSession } from "./session.ts";
 import type { HttpTransport } from "./transport.ts";
 
@@ -19,7 +19,7 @@ function stubClient(handler: (url: string, init?: RequestInit) => Response) {
     },
   };
   const client: InstagramClient = {
-    session: new InstagramSession({ transport, randomToken: () => "testtoken" }),
+    session: new InstagramSession({ transport, randomToken: () => "testtoken", sleep: async () => {} }),
     docIds: async () => FALLBACK_DOC_IDS,
   };
   return { client, calls };
@@ -190,4 +190,72 @@ test("each session owns its cookie jar", async () => {
   await a.bootstrap();
   await b.bootstrap();
   assert.notEqual(a.cookies.get("csrftoken"), b.cookies.get("csrftoken"));
+});
+
+/* -------------------------------------------------------------------------- */
+/* Authenticated session                                                       */
+/* -------------------------------------------------------------------------- */
+
+const CREDENTIALS = {
+  sessionId: "71234567890%3AAbCdEf%3A26%3AAY",
+  dsUserId: "71234567890",
+  csrfToken: "AbCdEf0123456789XyZq",
+};
+
+test("verifySession reports the account when Instagram accepts the cookies", async () => {
+  const { client, calls } = stubClient(
+    () => new Response(JSON.stringify({ user: { username: "throwaway", pk: "71234567890" } })),
+  );
+  client.session.authenticate(CREDENTIALS);
+  const result = await verifySession(client);
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.username, "throwaway");
+  // One request, against the account's own profile: cheap and uninteresting.
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]!, /users\/71234567890\/info/);
+});
+
+test("verifySession reports a rejected login as such, not as a generic failure", async () => {
+  for (const response of [
+    () => new Response(JSON.stringify({ message: "login_required" })),
+    () => new Response("{}", { status: 401 }),
+    () => new Response(JSON.stringify({ requires_login: true }), { status: 403 }),
+  ]) {
+    const { client } = stubClient(response);
+    client.session.authenticate(CREDENTIALS);
+    const result = await verifySession(client);
+    assert.equal(result.ok, false);
+    assert.match(result.ok === false ? result.error : "", /rejected those cookies/);
+  }
+});
+
+test("verifySession keeps rate limiting distinct from a bad login", async () => {
+  // Telling someone to re-paste cookies that are fine would send them to fix
+  // the wrong thing.
+  const { client } = stubClient(() => new Response("nope", { status: 429 }));
+  client.session.authenticate(CREDENTIALS);
+  const result = await verifySession(client);
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.error : "", /rate-limiting/);
+});
+
+test("verifySession refuses to guess when no session is configured", async () => {
+  const { client, calls } = stubClient(() => new Response("{}"));
+  const result = await verifySession(client);
+  assert.equal(result.ok, false);
+  assert.equal(calls.length, 0, "no request without a session to verify");
+});
+
+test("a rejected session during a search says to re-paste, not 'no such post'", async () => {
+  const { client } = stubClient(
+    () => new Response(JSON.stringify({ message: "login_required" }), { status: 401 }),
+  );
+  client.session.authenticate(CREDENTIALS);
+  const { fetchPost } = await import("./endpoints.ts");
+  await assert.rejects(fetchPost(client, "ABC123"), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.name, "SessionRejectedError");
+    assert.match(error.message, /expired/);
+    return true;
+  });
 });

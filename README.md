@@ -115,6 +115,54 @@ everything.
 Some fields are simply unavailable to logged-out requests (follower counts come
 back as `0`, for instance). The UI hides those rather than showing zeroes.
 
+## Optional: signing in
+
+Keepsake works signed out. Signing in only adds what a logged-in browser can
+already see — mainly **stories and highlights**, which Instagram hides from
+logged-out tools even for public accounts.
+
+**It does not unlock private accounts you do not already follow.** Nothing does.
+
+### Use a secondary account
+
+Scraping with a session cookie is against Instagram's terms and is the pattern
+their automated-access detection weights most heavily. An anonymous block costs
+you a retry; an account block costs you the account. Do not point this at an
+account you cannot lose.
+
+### How it works
+
+You log in with **your own browser** and paste only the resulting cookies.
+Keepsake never sees your password, never renders a login form, and never
+injects script into one — that is the entire reason for the clunkier flow.
+
+1. Install **Firefox for Android** or **Quetta** — both support real extensions.
+   Not Kiwi: archived January 2025 and frozen on Manifest V2.
+2. From the official add-on store, install a well-known open-source cookie
+   extension such as Cookie-Editor.
+3. Log in to `instagram.com` there. Expect a one-time new-device check.
+4. Copy `sessionid`, `ds_user_id` and `csrftoken`.
+5. Paste them into the setup panel, then **clear your clipboard**.
+
+Also paste your browser's **User-Agent** if you can. Without it, requests claim
+to be a Pixel 8, which contradicts the device the session was actually created
+on — and inconsistency is itself a signal.
+
+### What Keepsake does with them
+
+- Held **in the local server process's memory only**. Never written to disk,
+  never logged, never returned to the browser, never in `localStorage`.
+- **A server restart signs you out.** Deliberate: the web build has no keystore
+  to put a secret in. Persistence arrives with the Android build.
+- Checked against Instagram before they are kept. A bad paste fails at the setup
+  panel with a reason, not as a mysterious empty tab later.
+- Authenticated requests are spaced **1200ms apart** — slower than anonymous,
+  on purpose.
+
+The trade-off you are accepting: **the cookie extension becomes a trusted
+component**, since it can read cookies for every site. Install only a reputable
+open-source one from the official store.
+
 ## Scope
 
 Personal, local, single-user. There is no auth, no database, and no rate

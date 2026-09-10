@@ -1,0 +1,114 @@
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
+import { extractCookies, isSessionRejected, parseCredentials, redact } from "./auth.ts";
+
+const SESSION_ID = "71234567890%3AAbCdEfGhIjKlMn%3A26%3AAYd9xyz";
+const DS_USER_ID = "71234567890";
+const CSRF = "AbCdEf0123456789XyZq";
+
+const good = { sessionId: SESSION_ID, dsUserId: DS_USER_ID, csrfToken: CSRF };
+
+test("clean values are accepted", () => {
+  const parsed = parseCredentials(good);
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.ok && parsed.credentials, {
+    sessionId: SESSION_ID,
+    dsUserId: DS_USER_ID,
+    csrfToken: CSRF,
+  });
+});
+
+test("a whole cookie header pasted into one box is understood", () => {
+  // People paste what they have. Rejecting this would push them into editing
+  // secrets by hand in a text editor, which is worse than parsing it here.
+  const header = `Cookie: ig_did=X; sessionid=${SESSION_ID}; ds_user_id=${DS_USER_ID}; csrftoken=${CSRF}; rur=EAG`;
+  const parsed = parseCredentials({ sessionId: header, dsUserId: "", csrfToken: "" });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.ok && parsed.credentials.dsUserId, DS_USER_ID);
+  assert.equal(parsed.ok && parsed.credentials.csrfToken, CSRF);
+});
+
+test("a cookie-extension JSON export is understood", () => {
+  const json = JSON.stringify([
+    { name: "sessionid", value: SESSION_ID },
+    { name: "ds_user_id", value: DS_USER_ID },
+    { name: "csrftoken", value: CSRF },
+    { name: "unrelated", value: "ignored" },
+  ]);
+  const parsed = parseCredentials({ sessionId: json, dsUserId: "", csrfToken: "" });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.ok && parsed.credentials.sessionId, SESSION_ID);
+
+  // Some extensions wrap the array.
+  assert.deepEqual(extractCookies(JSON.stringify({ cookies: [{ name: "csrftoken", value: CSRF }] })), {
+    csrftoken: CSRF,
+  });
+});
+
+test("name=value and quoted values are unwrapped", () => {
+  const parsed = parseCredentials({
+    sessionId: `sessionid=${SESSION_ID}`,
+    dsUserId: `"${DS_USER_ID}"`,
+    csrfToken: `csrftoken="${CSRF}"`,
+  });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.ok && parsed.credentials.sessionId, SESSION_ID);
+  assert.equal(parsed.ok && parsed.credentials.dsUserId, DS_USER_ID);
+  assert.equal(parsed.ok && parsed.credentials.csrfToken, CSRF);
+});
+
+test("missing fields are named, not lumped into one vague error", () => {
+  const parsed = parseCredentials({ sessionId: SESSION_ID, dsUserId: "", csrfToken: "" });
+  assert.equal(parsed.ok, false);
+  assert.match(parsed.ok === false ? parsed.error : "", /ds_user_id/);
+  assert.match(parsed.ok === false ? parsed.error : "", /csrftoken/);
+});
+
+test("values of the wrong shape are rejected before a request is spent", () => {
+  // The classic mistake: copying the page URL, or the cookie name, or a
+  // truncated value.
+  const cases = [
+    { ...good, sessionId: "https://www.instagram.com/" },
+    { ...good, sessionId: "sessionid" },
+    { ...good, dsUserId: "not-a-number" },
+    { ...good, csrfToken: "short" },
+  ];
+  for (const input of cases) {
+    const parsed = parseCredentials(input);
+    assert.equal(parsed.ok, false, JSON.stringify(input).slice(0, 60));
+  }
+});
+
+test("a swapped sessionid and csrftoken is caught", () => {
+  const parsed = parseCredentials({ sessionId: CSRF, dsUserId: DS_USER_ID, csrfToken: SESSION_ID });
+  assert.equal(parsed.ok, false);
+});
+
+test("the User-Agent is carried when given and omitted when blank", () => {
+  const withUa = parseCredentials({ ...good, userAgent: "  Mozilla/5.0 (X11)  " });
+  assert.equal(withUa.ok && withUa.credentials.userAgent, "Mozilla/5.0 (X11)");
+  const without = parseCredentials({ ...good, userAgent: "   " });
+  assert.equal(without.ok && "userAgent" in without.credentials, false);
+});
+
+test("session rejection is told apart from ordinary failure", () => {
+  assert.equal(isSessionRejected(401, null), true);
+  assert.equal(isSessionRejected(200, { message: "login_required" }), true);
+  assert.equal(isSessionRejected(200, { message: "checkpoint_required" }), true);
+  assert.equal(isSessionRejected(200, { message: "challenge_required" }), true);
+  assert.equal(isSessionRejected(403, { requires_login: true }), true);
+
+  // These must keep their own messages: pointing them at "re-paste your
+  // cookies" would send the user to fix something that is not broken.
+  assert.equal(isSessionRejected(429, { message: "rate limited" }), false);
+  assert.equal(isSessionRejected(200, { data: {} }), false);
+  assert.equal(isSessionRejected(404, null), false);
+});
+
+test("redact never exposes the session token", () => {
+  const line = redact({ sessionId: SESSION_ID, dsUserId: DS_USER_ID, csrfToken: CSRF });
+  assert.equal(line.includes(SESSION_ID), false);
+  assert.equal(line.includes(CSRF), false);
+  assert.match(line, /\*\*\*/);
+  assert.match(line, new RegExp(DS_USER_ID));
+});

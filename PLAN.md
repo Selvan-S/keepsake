@@ -181,10 +181,41 @@ requests to Instagram no matter how the user clicks.
 
 ---
 
-## Phase 3 — optional authenticated session
+## Phase 3 — optional authenticated session — **DONE (web)**
 
-**Only start this once Phases 1–2 are done** — it needs the per-instance session
-from Phase 1.
+Shipped as the external-browser cookie handoff described below. What exists:
+
+- `core/instagram/client/auth.ts` — credential parsing and the
+  session-rejected/expired detection. Parsing accepts a bare value, `name=value`,
+  a whole `Cookie:` header, or a cookie-extension JSON export, because people
+  paste what they have and the alternative is teaching them to edit secrets in a
+  text editor.
+- `InstagramSession.authenticate()` clears anonymous state first, refuses to
+  bootstrap while signed in, ignores cookie-clearing `Set-Cookie` on `sessionid`,
+  and enforces a **1200ms minimum gap between authenticated requests** —
+  deliberately slower than anonymous, per the rate note below.
+- `verifySession()` — one cheap request against the account's own profile.
+  Nothing is kept unless Instagram accepts it.
+- `POST/GET/DELETE /api/session` and a guided setup panel carrying the warnings.
+
+**Storage, and the one real gap.** Credentials live in the local server
+process's memory only: never on disk, never in the repo, never logged, never
+sent back to the browser, and not in `localStorage`. A server restart therefore
+signs you out. That is deliberate for the web build — the alternative is a
+secret at rest with no keystore to put it in. The
+`EncryptedSharedPreferences`/Keystore persistence below belongs to Phase 4 and
+is **not** done.
+
+**Not built, on purpose:** the WebView login fallback. It stays a fallback.
+
+**Not verified against live Instagram.** Every path is tested against stubs; no
+real session has been pasted through this yet.
+
+---
+
+### Original design notes
+
+**Needs the per-instance session from Phase 1.**
 
 **What auth does and does not do.** A session cookie grants exactly what that
 account can see in a browser. It does *not* unlock private accounts you do not

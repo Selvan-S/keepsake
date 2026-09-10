@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { PostResult, ProfileTab } from "@/core/instagram/types";
-import { createSerialQueue } from "@/lib/serial-queue";
+import { createSerialQueue } from "@/core/util/serial-queue";
 import type { ResolveApi } from "./use-resolve";
 
 /**
