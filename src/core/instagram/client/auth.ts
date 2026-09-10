@@ -122,6 +122,41 @@ export function extractCookies(input: string): Partial<Record<string, string>> {
 }
 
 /**
+ * Whether a paste is a cookie export *at all*, regardless of which cookies it
+ * happens to contain.
+ *
+ * This is deliberately separate from finding our three: an export taken from a
+ * logged-out tab is a perfectly good export that simply lacks a session, and
+ * telling that user "this is not an export" would send them to fix the one
+ * thing that is not wrong.
+ */
+export function looksLikeCookieExport(input: string): boolean {
+  const text = input.trim();
+  if (!text) return false;
+  if (/^[[{]/.test(text)) {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      const list = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { cookies?: unknown })?.cookies)
+          ? (parsed as { cookies: unknown[] }).cookies
+          : null;
+      if (!list) return false;
+      return list.some(
+        (entry) =>
+          entry !== null &&
+          typeof entry === "object" &&
+          typeof (entry as { name?: unknown }).name === "string",
+      );
+    } catch {
+      return false;
+    }
+  }
+  // A `name=value` list, e.g. a copied Cookie header.
+  return /[\w.-]+=[^;\s]/.test(text.replace(/^cookie:\s*/i, ""));
+}
+
+/**
  * Turn three pasted fields into credentials, or say precisely what is wrong.
  *
  * Each field also accepts the `name=value` and blob forms, so pasting the whole
@@ -143,28 +178,24 @@ export function parseCredentials(input: {
   // Anything pasted into any box may carry all three; later boxes do not
   // overwrite values an earlier one already supplied explicitly.
   const scanned: Record<string, string> = {};
-  let bundleYieldedCookies = false;
   for (const raw of [input.bundle, input.sessionId, input.dsUserId, input.csrfToken]) {
-    const found = extractCookies(raw || "");
-    if (raw === input.bundle && Object.keys(found).length > 0) bundleYieldedCookies = true;
-    for (const [key, value] of Object.entries(found)) {
+    for (const [key, value] of Object.entries(extractCookies(raw || ""))) {
       if (value && !scanned[key]) scanned[key] = value;
     }
   }
 
-  // A paste that yielded nothing recognisable is a different mistake from an
-  // export that is genuinely missing a cookie, and deserves different advice.
-  if ((input.bundle || "").trim() && !bundleYieldedCookies) {
-    const hasOtherInput = [input.sessionId, input.dsUserId, input.csrfToken].some((v) =>
-      (v || "").trim(),
-    );
-    if (!hasOtherInput) {
-      return {
-        ok: false,
-        error:
-          "That does not look like a cookie export. Use the extension's Export button on instagram.com and paste the whole thing.",
-      };
-    }
+  const bundle = (input.bundle || "").trim();
+  const hasFieldInput = [input.sessionId, input.dsUserId, input.csrfToken].some((v) =>
+    (v || "").trim(),
+  );
+  // Gibberish in the box is a different mistake from a real export that is
+  // missing a session, and the two need different advice.
+  if (bundle && !hasFieldInput && !looksLikeCookieExport(bundle)) {
+    return {
+      ok: false,
+      error:
+        "That does not look like a cookie export. Use the extension's Export button on instagram.com and paste the whole thing.",
+    };
   }
 
   const direct: Record<keyof typeof SHAPES, string> = {
@@ -187,7 +218,7 @@ export function parseCredentials(input: {
     const names = missing.map((f) => LABELS[f]).join(", ");
     // If they pasted an export and it simply did not contain these, the useful
     // advice is "you were logged out", not "fill in the boxes".
-    if (bundleYieldedCookies) {
+    if (bundle && looksLikeCookieExport(bundle)) {
       return {
         ok: false,
         error: `That export has no ${names}. Export the cookies again from a tab where you are logged in to instagram.com.`,

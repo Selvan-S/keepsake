@@ -1,6 +1,12 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { extractCookies, isSessionRejected, parseCredentials, redact } from "./auth.ts";
+import {
+  extractCookies,
+  isSessionRejected,
+  looksLikeCookieExport,
+  parseCredentials,
+  redact,
+} from "./auth.ts";
 
 const SESSION_ID = "71234567890%3AAbCdEfGhIjKlMn%3A26%3AAYd9xyz";
 const DS_USER_ID = "71234567890";
@@ -136,14 +142,39 @@ test("a Cookie-Editor export pasted as the bundle is the primary path", () => {
 test("a logged-out export is diagnosed as logged-out, not as an empty form", () => {
   // Exporting from a tab where you are signed out yields real cookies, just
   // not these. "Fill in the boxes" would be unhelpful and wrong.
-  const exported = JSON.stringify([
+  const withSome = JSON.stringify([
     { name: "ig_did", value: "AAA" },
     { name: "csrftoken", value: CSRF },
   ]);
-  const parsed = parseCredentials({ bundle: exported });
+  const parsed = parseCredentials({ bundle: withSome });
   assert.equal(parsed.ok, false);
   assert.match(parsed.ok === false ? parsed.error : "", /logged in/);
   assert.match(parsed.ok === false ? parsed.error : "", /sessionid/);
+
+  // And when the export contains none of our three at all -- the actual shape
+  // of a logged-out export. It is still a real export, so it must not be
+  // dismissed as "not an export".
+  const withNone = JSON.stringify([
+    { name: "ig_did", value: "AAA", domain: ".instagram.com" },
+    { name: "mid", value: "BBB", domain: ".instagram.com" },
+  ]);
+  const none = parseCredentials({ bundle: withNone });
+  assert.equal(none.ok, false);
+  assert.match(none.ok === false ? none.error : "", /logged in/);
+});
+
+test("a real export is told apart from gibberish, whatever it contains", () => {
+  assert.equal(looksLikeCookieExport(JSON.stringify([{ name: "ig_did", value: "A" }])), true);
+  assert.equal(looksLikeCookieExport(JSON.stringify({ cookies: [{ name: "mid", value: "B" }] })), true);
+  assert.equal(looksLikeCookieExport("sessionid=abc; mid=def"), true);
+  assert.equal(looksLikeCookieExport("Cookie: mid=def"), true);
+
+  assert.equal(looksLikeCookieExport("hello"), false);
+  assert.equal(looksLikeCookieExport("not json at all"), false);
+  assert.equal(looksLikeCookieExport("{}"), false);
+  assert.equal(looksLikeCookieExport("[]"), false);
+  assert.equal(looksLikeCookieExport('[{"foo":"bar"}]'), false);
+  assert.equal(looksLikeCookieExport(""), false);
 });
 
 test("an explicit field still wins over the same cookie in the bundle", () => {
