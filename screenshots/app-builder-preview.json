@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Keepsake",
+      "hasCanvas": false,
+      "bodyTextLen": 390,
+      "bodyTextHash": "7184ba999299d5fba69bec5b8367122b2f6c913c385d7cdf2fe85927de6f7e7b",
+      "bodyTextPrefix": "Keepsake PUBLIC ARCHIVE PERSONAL INSTAGRAM DOWNLOADER Save the f",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Keepsake",
+      "hasCanvas": false,
+      "bodyTextLen": 390,
+      "bodyTextHash": "7184ba999299d5fba69bec5b8367122b2f6c913c385d7cdf2fe85927de6f7e7b",
+      "bodyTextPrefix": "Keepsake PUBLIC ARCHIVE PERSONAL INSTAGRAM DOWNLOADER Save the f",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

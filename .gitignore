@@ -1,0 +1,19 @@
+node_modules/
+.node_modules.lock
+
+# Build output
+dist/
+.vercel/
+.tanstack/
+.nitro/
+.output/
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.log
