@@ -320,12 +320,14 @@ export function KeepsakeApp() {
   const [lightbox, setLightbox] = useState<{ post: PostResult; index: number } | null>(null);
   const [tab, setTab] = useState<ProfileTab>("posts");
   const [loadingMore, setLoadingMore] = useState(false);
+  const [tabLoading, setTabLoading] = useState(false);
   const [fillNote, setFillNote] = useState<string | null>(null);
   const [highlightFilter, setHighlightFilter] = useState<string>("all");
   const sessionRef = useRef(0);
   const resultRef = useRef(result);
   resultRef.current = result;
   const pagingLock = useRef(false);
+  const tabLoads = useRef(new Map<ProfileTab, Promise<void>>());
 
   const profile: ProfileResult | null =
     result && result.ok && result.mode === "profile" ? result.profile : null;
@@ -359,13 +361,19 @@ export function KeepsakeApp() {
             items: [...prev.items, ...extra],
             cursor: page.cursor ?? null,
             hasMore: Boolean(page.hasMore),
+            loaded: true,
           },
         },
       };
     });
   }
 
-  async function requestMore(tabId: ProfileTab, cursor: string, userId: string | null, username: string) {
+  async function requestMore(
+    tabId: ProfileTab,
+    cursor: string | null,
+    userId: string | null,
+    username: string,
+  ) {
     const res = await fetch("/api/profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -382,6 +390,40 @@ export function KeepsakeApp() {
       throw new Error(data.error || "Could not load more.");
     }
     mergeTab(tabId, { items: data.items, cursor: data.cursor ?? null, hasMore: Boolean(data.hasMore) });
+  }
+
+  /**
+   * Fetch a tab that a search deliberately skipped. Deduplicated on the tab, so
+   * flipping quickly between tabs cannot stack up duplicate requests -- which
+   * would undo the point of not fetching them in the first place.
+   */
+  async function ensureTabLoaded(tabId: ProfileTab): Promise<void> {
+    const current = resultRef.current;
+    if (!current || !current.ok || current.mode !== "profile") return;
+    if (current.profile[tabId].loaded) return;
+    const pending = tabLoads.current.get(tabId);
+    if (pending) return pending;
+
+    const session = sessionRef.current;
+    const { username, userId } = current.profile;
+    const task = (async () => {
+      setTabLoading(true);
+      try {
+        await requestMore(tabId, null, userId, username);
+      } catch (error) {
+        if (sessionRef.current === session) {
+          toast.error(error instanceof Error ? error.message : `Could not load ${tabId}.`);
+          // Mark it loaded-but-empty so the tab settles on a real message
+          // instead of retrying on every render.
+          mergeTab(tabId, { items: [], cursor: null, hasMore: false });
+        }
+      } finally {
+        tabLoads.current.delete(tabId);
+        if (sessionRef.current === session) setTabLoading(false);
+      }
+    })();
+    tabLoads.current.set(tabId, task);
+    return task;
   }
 
   /**
@@ -503,7 +545,16 @@ export function KeepsakeApp() {
     if (!profile) return;
     setBusyKey("feed-all");
     try {
-      const result = await downloadProfileZip(profile);
+      // "Download everything" has to mean everything. Tabs the search skipped
+      // are fetched now -- sequentially, since this is the one place we
+      // knowingly touch every endpoint and a burst is what gets us blocked.
+      for (const tabId of ["reels", "stories", "highlights"] as ProfileTab[]) {
+        await ensureTabLoaded(tabId);
+      }
+      const current = resultRef.current;
+      const full =
+        current && current.ok && current.mode === "profile" ? current.profile : profile;
+      const result = await downloadProfileZip(full);
       saveToast(result, `Packed the public archive (${plural(result.saved, "file")})`);
     } catch {
       toast.error("Could not zip that profile.");
@@ -530,6 +581,16 @@ export function KeepsakeApp() {
   useEffect(() => {
     setHighlightFilter("all");
   }, [profile?.username]);
+
+  // A search loads only the Posts preview; whichever tab the user opens is
+  // fetched here, once.
+  useEffect(() => {
+    if (!profile || feedFor(profile, tab).loaded) return;
+    void ensureTabLoaded(tab);
+    // ensureTabLoaded is redefined every render and guards its own re-entry;
+    // depending on it here would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, tab]);
 
   const archiveCount = profile
     ? profile.posts.items.length +
@@ -692,7 +753,14 @@ export function KeepsakeApp() {
           </div>
         ) : null}
 
-        {profile && !loading && posts.length === 0 ? (
+        {profile && (loading || tabLoading) && posts.length === 0 ? (
+          <div className="mt-8 flex justify-center text-sm text-subtle">
+            <LoaderCircle className="mr-2 size-4 animate-spin" />
+            Loading {tab}…
+          </div>
+        ) : null}
+
+        {profile && !loading && !tabLoading && posts.length === 0 ? (
           <EmptyTab tab={tab} username={profile.username} hasPublicStory={profile.hasPublicStory} />
         ) : null}
 

@@ -91,6 +91,15 @@ rotate, edit that one file and every installed copy recovers without a rebuild.
 If `KEEPSAKE_DOC_ID_URL` is unset the app still runs on its built-in ids, but
 logs a warning at startup: that copy can only be fixed by rebuilding it.
 
+**A search makes two requests, not eight.** Resolving a profile used to fan out
+to the timeline, reels, stories and the highlights tray (which is itself up to
+three requests) in one burst, whether or not anyone opened those tabs. Burst
+volume from one address is what gets an account or IP blocked, so `fetchProfile`
+now does a single timeline request and marks the other tabs `loaded: false`;
+they are fetched by `fetchProfileTab` when their tab is opened. "Download
+everything" loads the missing tabs first, sequentially, so the zip still means
+everything.
+
 Some fields are simply unavailable to logged-out requests (follower counts come
 back as `0`, for instance). The UI hides those rather than showing zeroes.
 

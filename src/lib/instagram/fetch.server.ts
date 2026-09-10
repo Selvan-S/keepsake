@@ -12,6 +12,12 @@ import { isAllowedMediaHost } from "./media-url";
 import { StaleDocIdError, assertDocIdAccepted, getDocIds } from "./doc-id";
 
 const IG_APP_ID = "936619743392459";
+/**
+ * Items per timeline page. A search is usually someone checking one profile, so
+ * the first screen is all that is needed; asking for a big page every time is
+ * volume Instagram can weigh against the account for no benefit.
+ */
+const PREVIEW_COUNT = 12;
 const UA =
   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.94 Mobile Safari/537.36";
 
@@ -318,22 +324,12 @@ async function graphqlPost(shortcode: string, retried = false): Promise<PostResu
 }
 
 function emptyFeed(): ProfileFeed {
-  return { items: [], cursor: null, hasMore: false };
+  return { items: [], cursor: null, hasMore: false, loaded: true };
 }
 
-function mergeFeeds(first: ProfileFeed, extra: ProfileFeed): ProfileFeed {
-  const seen = new Set(first.items.map((p) => p.shortcode));
-  const items = [...first.items];
-  for (const post of extra.items) {
-    if (!post.shortcode || seen.has(post.shortcode)) continue;
-    seen.add(post.shortcode);
-    items.push(post);
-  }
-  return {
-    items,
-    cursor: extra.cursor ?? first.cursor,
-    hasMore: extra.hasMore,
-  };
+/** A tab we have deliberately not fetched. Distinct from a tab that is empty. */
+function deferredFeed(): ProfileFeed {
+  return { items: [], cursor: null, hasMore: false, loaded: false };
 }
 
 async function graphqlJson(docId: string, variables: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -373,7 +369,7 @@ async function graphqlJson(docId: string, variables: Record<string, unknown>): P
 async function fetchTimelinePage(username: string, cursor?: string | null): Promise<ProfileFeed & { user: Record<string, unknown> | null }> {
   const variables: Record<string, unknown> = {
     data: {
-      count: 36,
+      count: PREVIEW_COUNT,
       include_relationship_info: true,
       latest_besties_reel_media: true,
       latest_reel_media: true,
@@ -412,6 +408,7 @@ async function fetchTimelinePage(username: string, cursor?: string | null): Prom
     items,
     cursor: str(page?.end_cursor) || null,
     hasMore: Boolean(page?.has_next_page),
+    loaded: true,
     user,
   };
 }
@@ -453,6 +450,7 @@ async function fetchReelsPage(userId: string, cursor?: string | null): Promise<P
     items,
     cursor: str(paging?.max_id) || null,
     hasMore: Boolean(paging?.more_available),
+    loaded: true,
   };
 }
 
@@ -506,7 +504,7 @@ function postsFromReels(reels: Record<string, unknown>[], kind: "story" | "highl
 async function fetchStories(userId: string): Promise<ProfileFeed> {
   try {
     const reels = await fetchReelsMedia([userId]);
-    return { items: postsFromReels(reels, "story"), cursor: null, hasMore: false };
+    return { items: postsFromReels(reels, "story"), cursor: null, hasMore: false, loaded: true };
   } catch {
     return emptyFeed();
   }
@@ -562,7 +560,7 @@ async function fetchHighlights(userId: string): Promise<{ feed: ProfileFeed; has
     if (titled && !str(reel.title)) reel.title = titled;
   }
   return {
-    feed: { items: postsFromReels(reels, "highlight"), cursor: null, hasMore: false },
+    feed: { items: postsFromReels(reels, "highlight"), cursor: null, hasMore: false, loaded: true },
     hasPublicStory: tray.hasPublicStory,
   };
 }
@@ -596,35 +594,43 @@ function profileFromUser(
   };
 }
 
+/**
+ * Resolve a profile using a single timeline request.
+ *
+ * This deliberately does not fan out to reels, stories and highlights. Doing so
+ * cost five to seven requests in a burst on every search -- including three for
+ * a highlights tray most searches never open -- and burst request volume from
+ * one address is exactly the pattern Instagram blocks on. Those tabs are marked
+ * unloaded and fetched by `fetchProfileTab` when the user opens one, so the
+ * requests still happen, just only when someone actually wants the result.
+ */
 export async function fetchProfile(username: string): Promise<ProfileResult> {
   const timeline = await fetchTimelinePage(username);
   if (timeline.user && Boolean(timeline.user.is_private) && timeline.items.length === 0) {
     throw new Error(`@${username} is private. Keepsake only reads public media.`);
   }
+  const posts: ProfileFeed = {
+    items: timeline.items,
+    cursor: timeline.cursor,
+    hasMore: timeline.hasMore,
+    loaded: true,
+  };
   const userId = str(timeline.user?.pk) || str(timeline.user?.id);
-  let posts: ProfileFeed = { items: timeline.items, cursor: timeline.cursor, hasMore: timeline.hasMore };
   if (!userId) {
+    // Without an id the other tabs cannot be fetched later either, so report
+    // them as loaded-and-empty rather than leaving the UI waiting on them.
     return profileFromUser(username, timeline.user, posts, emptyFeed(), emptyFeed(), emptyFeed(), false);
   }
-  const [reels, stories, highlightPack, extraPosts] = await Promise.all([
-    fetchReelsPage(userId).catch(() => emptyFeed()),
-    fetchStories(userId).catch(() => emptyFeed()),
-    fetchHighlights(userId).catch(() => ({ feed: emptyFeed(), hasPublicStory: false })),
-    timeline.hasMore && timeline.cursor
-      ? fetchTimelinePage(username, timeline.cursor).catch(() => emptyFeed())
-      : Promise.resolve(emptyFeed()),
-  ]);
-  if (extraPosts.items.length > 0) {
-    posts = mergeFeeds(posts, extraPosts);
-  }
+  // hasPublicStory came from the highlights tray, which is no longer fetched
+  // here; the stories tab reports what it finds when it is opened.
   return profileFromUser(
     username,
     timeline.user,
     posts,
-    reels,
-    stories,
-    highlightPack.feed,
-    highlightPack.hasPublicStory,
+    deferredFeed(),
+    deferredFeed(),
+    deferredFeed(),
+    false,
   );
 }
 
@@ -636,7 +642,7 @@ export async function fetchProfileTab(
 ): Promise<ProfileFeed> {
   if (tab === "posts") {
     const page = await fetchTimelinePage(username, cursor);
-    return { items: page.items, cursor: page.cursor, hasMore: page.hasMore };
+    return { items: page.items, cursor: page.cursor, hasMore: page.hasMore, loaded: true };
   }
   let id = userId || "";
   if (!id) {
