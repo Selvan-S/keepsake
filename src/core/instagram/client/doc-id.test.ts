@@ -26,6 +26,30 @@ test("a rejected persisted query is detected across the shapes Meta uses", () =>
   }
 });
 
+test("the shape a real rotation produced is detected", () => {
+  // Captured from the live site the moment a working timeline id went stale.
+  // Nothing in the text mentions a doc_id, which is why it was being reported
+  // as "no public profile named @x" until it was seen in the wild.
+  const observed = {
+    errors: [
+      {
+        message: "execution error",
+        code: 1675002,
+        summary: "Incorrect Query",
+        description: "The query provided was invalid.",
+      },
+    ],
+    data: {},
+    status: "ok",
+  };
+  assert.equal(isStaleDocIdResponse(observed), true);
+
+  // The numeric code alone is enough, so a reworded message still lands.
+  assert.equal(isStaleDocIdResponse({ errors: [{ code: 1675002 }] }), true);
+  // And the text alone is enough, so a changed code still lands.
+  assert.equal(isStaleDocIdResponse({ errors: [{ summary: "Incorrect Query" }] }), true);
+});
+
 test("matching is case-insensitive", () => {
   assert.equal(isStaleDocIdResponse({ errors: [{ message: "PERSISTEDQUERYNOTFOUND" }] }), true);
   assert.equal(isStaleDocIdResponse({ message: "Nonexistent DOC_ID" }), true);
@@ -41,6 +65,9 @@ test("ordinary failures are not mislabelled as a stale doc_id", () => {
     { errors: [{ description: "User lookup returned null", summary: "Bad Request" }] },
     { message: "Please wait a few minutes before you try again." },
     { errors: [{ message: "Sorry, something went wrong" }] },
+    // "execution error" on its own is too vague to blame the doc_id for.
+    { errors: [{ message: "execution error" }] },
+    { errors: [{ code: 1675030 }] },
     { message: "checkpoint_required" },
   ];
   for (const root of notStale) {

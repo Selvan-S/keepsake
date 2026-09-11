@@ -9,6 +9,7 @@ import {
   reelsMediaFromJson,
 } from "../normalize/highlights.ts";
 import { mapPost } from "../normalize/post.ts";
+import { viewerFromHtml } from "../normalize/viewer.ts";
 import { profileFromUser } from "../normalize/profile.ts";
 import { PREVIEW_COUNT } from "./constants.ts";
 import { graphqlQuery } from "./graphql.ts";
@@ -322,9 +323,14 @@ export async function fetchProfileTab(
 /**
  * Confirm a pasted session actually works, and report whose it is.
  *
- * One request, against the account's own profile: cheap, uninteresting
- * traffic, and it returns the username so the UI can show who is signed in
- * rather than just "authenticated".
+ * Loads instagram.com the way a browser would, and looks for the viewer's own
+ * profile in the page. The JSON routes that would be tidier do not work:
+ * `/api/v1/users/{id}/info/` serves the app shell as text/html, and
+ * `/api/v1/accounts/current_user/` answers 400. Both were measured against a
+ * real session rather than assumed.
+ *
+ * One request, and the least interesting one available — loading the home page
+ * is exactly what the browser this session came from does.
  */
 export async function verifySession(
   client: InstagramClient,
@@ -333,56 +339,28 @@ export async function verifySession(
   const id = session.accountId;
   if (!id) return { ok: false, error: "No session is configured." };
   try {
-    const res = await session.request(`https://www.instagram.com/api/v1/users/${id}/info/`, {
-      headers: session.headers({ Accept: "application/json" }),
+    const res = await session.request("https://www.instagram.com/", {
+      headers: session.documentHeaders(),
       redirect: "follow",
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(25000),
     });
-    const text = await res.text();
-    let root: Record<string, unknown> | null = null;
-    try {
-      root = asRecord(JSON.parse(text));
-    } catch {
-      root = null;
-    }
     if (res.status === 429) {
       return { ok: false, error: "Instagram is rate-limiting this network. Try again shortly." };
     }
-    if (isSessionRejected(res.status, root)) {
-      return { ok: false, error: "Instagram rejected those cookies. Check you copied them from a logged-in instagram.com tab." };
-    }
-    // A body that is not JSON is Instagram serving a page rather than answering
-    // the API -- in practice the login wall, reached by following a redirect.
-    // That is a rejected session, not a strange one, and saying so sends the
-    // reader somewhere useful.
-    if (!root) {
-      const looksLikeHtml = /^\s*<(!doctype|html)/i.test(text);
+    const html = await res.text();
+    const viewer = viewerFromHtml(html, id);
+
+    if (!viewer.loggedIn) {
       return {
         ok: false,
-        error: looksLikeHtml
-          ? `Instagram served a login page instead of account data (HTTP ${res.status}). Those cookies are not being accepted — export them again from a logged-in tab.`
-          : `Instagram returned something unreadable (HTTP ${res.status}).`,
+        error: viewer.sawLoginPage
+          ? "Instagram showed a login page, so those cookies are not being accepted. Export them again from a tab where you are logged in."
+          : `Instagram did not recognise that session (HTTP ${res.status}). Check the export came from a logged-in instagram.com tab.`,
       };
     }
-
-    // The shape has moved between endpoints and versions, so read the places it
-    // has been rather than betting on one.
-    const username =
-      str(asRecord(root.user)?.username) ||
-      str(root.username) ||
-      str(asRecord(asRecord(root.data)?.user)?.username) ||
-      str(asRecord(asRecord(root.graphql)?.user)?.username);
-
-    if (!username) {
-      // Name the keys we did get. They are structure, not content, and they are
-      // the one thing that makes this diagnosable from a bug report.
-      const keys = Object.keys(root).slice(0, 8).join(", ") || "none";
-      return {
-        ok: false,
-        error: `Instagram answered (HTTP ${res.status}) but without an account. Fields returned: ${keys}.`,
-      };
-    }
-    return { ok: true, username };
+    // Signed in, but the handle was not where we expected it. Worth keeping the
+    // session -- it works -- rather than refusing over a cosmetic detail.
+    return { ok: true, username: viewer.username || `user ${id}` };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not reach Instagram.";
     return { ok: false, error: message };

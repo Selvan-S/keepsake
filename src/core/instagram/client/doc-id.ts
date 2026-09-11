@@ -34,7 +34,19 @@ const STALE_MARKERS = [
   "docid",
   "nonexistent doc",
   "non-existent doc",
+  // Observed live when a previously-working timeline id went stale: a 400
+  // carrying summary "Incorrect Query" and description "The query provided was
+  // invalid." Nothing in that text mentions a doc_id, which is exactly why it
+  // was being reported as "no such profile" until it was seen in the wild.
+  "incorrect query",
+  "query provided was invalid",
 ];
+
+/**
+ * Meta's own error codes for a rejected query, which survive wording changes.
+ * 1675002 accompanies "Incorrect Query" on a stale persisted-query id.
+ */
+const STALE_CODES = new Set([1675002]);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -69,11 +81,25 @@ function rejectionStrings(root: Record<string, unknown> | null): string[] {
   return out;
 }
 
+/** Numeric error codes carried alongside the messages above. */
+function rejectionCodes(root: Record<string, unknown> | null): number[] {
+  if (!root) return [];
+  const out: number[] = [];
+  const errors = Array.isArray(root.errors) ? root.errors : [];
+  for (const entry of errors) {
+    const rec = asRecord(entry);
+    if (rec && typeof rec.code === "number") out.push(rec.code);
+  }
+  if (typeof root.code === "number") out.push(root.code);
+  return out;
+}
+
 /**
  * True when a GraphQL response is Instagram refusing the persisted query id
  * itself, rather than refusing the thing we asked for.
  */
 export function isStaleDocIdResponse(root: Record<string, unknown> | null): boolean {
+  if (rejectionCodes(root).some((code) => STALE_CODES.has(code))) return true;
   return rejectionStrings(root).some((text) => {
     const lower = text.toLowerCase();
     return STALE_MARKERS.some((marker) => lower.includes(marker));

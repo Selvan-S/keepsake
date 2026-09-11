@@ -203,30 +203,46 @@ const CREDENTIALS = {
 };
 
 test("verifySession reports the account when Instagram accepts the cookies", async () => {
+  // Measured against the live site: the JSON routes do not answer, but a
+  // logged-in homepage embeds the viewer's own profile beside their id.
   const { client, calls } = stubClient(
-    () => new Response(JSON.stringify({ user: { username: "throwaway", pk: "71234567890" } })),
+    () =>
+      new Response(
+        `<!DOCTYPE html><html><script>{"id":"71234567890","username":"throwaway"}</script></html>`,
+      ),
   );
   client.session.authenticate(CREDENTIALS);
   const result = await verifySession(client);
   assert.equal(result.ok, true);
   assert.equal(result.ok && result.username, "throwaway");
-  // One request, against the account's own profile: cheap and uninteresting.
+  // One request, and the least interesting one available.
   assert.equal(calls.length, 1);
-  assert.match(calls[0]!, /users\/71234567890\/info/);
+  assert.equal(calls[0], "GET https://www.instagram.com/");
 });
 
-test("verifySession reports a rejected login as such, not as a generic failure", async () => {
-  for (const response of [
-    () => new Response(JSON.stringify({ message: "login_required" })),
-    () => new Response("{}", { status: 401 }),
-    () => new Response(JSON.stringify({ requires_login: true }), { status: 403 }),
-  ]) {
-    const { client } = stubClient(response);
-    client.session.authenticate(CREDENTIALS);
-    const result = await verifySession(client);
-    assert.equal(result.ok, false);
-    assert.match(result.ok === false ? result.error : "", /rejected those cookies/);
-  }
+test("verifySession reports a refused login as refused", async () => {
+  const { client } = stubClient(
+    () =>
+      new Response(
+        '<!DOCTYPE html><html><form action="/accounts/login/" method="post"></form></html>',
+      ),
+  );
+  client.session.authenticate(CREDENTIALS);
+  const result = await verifySession(client);
+  assert.equal(result.ok, false);
+  assert.match(result.ok === false ? result.error : "", /not being accepted/);
+});
+
+test("verifySession keeps a working session whose handle it cannot read", async () => {
+  // Refusing a session that demonstrably works, because the markup moved a
+  // cosmetic field, would be the wrong trade.
+  const { client } = stubClient(
+    () => new Response(`<!DOCTYPE html><html><script>{"id":"71234567890"}</script></html>`),
+  );
+  client.session.authenticate(CREDENTIALS);
+  const result = await verifySession(client);
+  assert.equal(result.ok, true);
+  assert.match(result.ok ? result.username : "", /71234567890/);
 });
 
 test("verifySession keeps rate limiting distinct from a bad login", async () => {
