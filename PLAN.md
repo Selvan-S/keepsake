@@ -45,6 +45,8 @@ its groundwork in place but the app itself is not started.
    error text: a rotation now names this runbook.
 3. Notifications (Phase 5 step 7) are unbuilt, and largely moot on the folder
    path since it runs unattended.
+4. **`doc_id` rotations need a manual DevTools run every time.** Phase 6 is the
+   fix and is prioritised ahead of Phase 4.
 
 ## The `doc_id` problem (read before touching `fetch.server.ts`)
 
@@ -381,41 +383,126 @@ Android-first. Sideloaded APK, no store.
 
 ---
 
+## Phase 6 — self-healing doc_ids (do this before Phase 4)
+
+**Why this jumped the queue.** The ids rotated twice in one day on 2026-09-11,
+once mid-session while the app was otherwise working. Every rotation currently
+costs a DevTools session and a gist edit, and until that happens the app is
+simply broken for whoever is holding it. Phase 4 makes the app nicer; this makes
+it keep working, which matters more when the thing is sideloaded onto other
+people's phones and they cannot fix it themselves.
+
+### The idea
+
+Instagram's own web bundles contain the persisted-query ids, because the web
+client has to send them too. We already fetch `instagram.com` for session
+verification, and its HTML references the bundles. So the app can read the
+current ids out of the site that is rejecting the old ones.
+
+The resolution order becomes:
+
+```
+discovered from the live bundles   (new)
+  -> KEEPSAKE_DOC_ID_URL gist      (Phase 0)
+    -> compiled into the build     (the floor)
+```
+
+### Discover lazily, not on startup
+
+Do **not** scrape bundles every launch. Bundles are megabytes and there are
+several; doing that on every start is slow, is a lot of traffic, and buys
+nothing on the overwhelming majority of runs where the ids are fine.
+
+Instead, hang it off the failure we already detect:
+
+```
+StaleDocIdError thrown
+  -> discover ids from the bundles
+    -> validate
+      -> retry the request once
+        -> remember for this process
+```
+
+That is near-zero cost when things work, and self-healing exactly when they do
+not. `assertDocIdAccepted` already identifies the moment precisely, which is
+what makes this cheap to add.
+
+### Validate before trusting
+
+A discovered id that is wrong must never silently replace a working one. Run one
+cheap query with the candidate and accept it only if the response is not itself
+a stale-`doc_id` rejection. A failed discovery then degrades to today's
+behaviour — the runbook error — rather than breaking something that worked.
+
+This is the property that makes the whole feature safe to ship, so build the
+validation first.
+
+### Finding the right number
+
+The hard part is not finding ids, it is knowing which is which. Use the response
+field names as anchors, the same technique `viewerFromHtml` uses: they are
+stable, specific, and appear beside the query definition.
+
+| Want | Anchor to search for |
+| --- | --- |
+| `TIMELINE_DOC_ID` | `xdt_api__v1__feed__user_timeline_graphql_connection` |
+| `POST_DOC_ID` | `xdt_api__v1__media__shortcode__web_info` |
+| `HIGHLIGHTS_TRAY_DOC_ID` | `edge_highlight_reels` |
+
+Parsing belongs in `core/` as a pure function over bundle text, with fixtures
+captured from a real bundle — the same split that made `viewerFromHtml`
+testable. Fetching stays in the client layer.
+
+### Honest costs
+
+- **Brittle by nature.** Minified bundles change shape; this will break again.
+  It is worth it only because the fallback chain means breaking means "back to
+  today", not "worse than today".
+- **Bundle size.** Fetch only what is needed and stop at the first match.
+- **It is more scraping.** Weigh it against the account-safety posture: it
+  happens at most once per process, and only after a failure.
+
+### Done when
+
+A rotation is survived without touching the gist: force a stale id, watch the
+app discover, validate, retry and succeed, then confirm the gist is still only
+the fallback.
+
 ## Starting the next session
 
 Paste this to pick up where the last session left off:
 
 ```
-Read PLAN.md and PHASE5.md, then start Phase 4 — the React Native / Expo app.
+Read PLAN.md and PHASE5.md, then do Phase 6 — self-healing doc_ids.
 
 Context: Keepsake is a personal Instagram archiver, local-only, distributed as
 a sideloaded APK to a few friends. Never an app store. Node 22.12+ — run
 `nvm use` first; the default on this machine is Node 20 and the tests will not
 run on it. Set KEEPSAKE_DOC_ID_URL before starting the dev server (see README).
+The gist ids may be stale again — if so, that is the problem Phase 6 solves, so
+refresh them once by hand to get a working baseline first.
 
-Before Phase 4, fix this bug: reels do not appear when signed in.
-fetchReelsPage swallows three different failures into an empty feed, so it
-cannot tell "no reels" from "the request failed". Make it report the
-difference first, then diagnose with what it says.
+First, a bug: reels do not appear when signed in. fetchReelsPage swallows three
+different failures into an empty feed, so it cannot tell "no reels" from "the
+request failed". Make it report the difference, then diagnose with what it
+says. Do not guess at the cause before that.
 
-Then Phase 4, in order:
-1. Restructure so the mobile app and the web app share src/core — a workspace,
-   or point Metro at it directly. Do not copy core.
-2. An HttpTransport backed by React Native's native fetch. Check the two
-   globals src/core/portability.test.ts flags: AbortSignal.timeout and
-   crypto.randomUUID are missing on RN and need polyfilling or injecting.
-3. Swap src/lib/media/source.ts for the identity implementation and delete
-   /api/media — RN has no CORS problem, so the proxy stops being needed.
-4. expo-media-library for saving, behind the existing share.ts signature.
-5. The Android share-target intent filter. This is the actual reason for the
-   phase; it needs a development build, not Expo Go.
+Then Phase 6, in order. PLAN.md has the design; the short version:
+1. A pure parser in core/ that pulls doc_ids out of bundle text, anchored on
+   the response field names, with a fixture captured from a real bundle.
+2. Validation: accept a discovered id only if a cheap query with it is not
+   itself a stale-doc_id rejection. Build this before wiring anything up — it
+   is what stops a bad discovery replacing a working id.
+3. Hang discovery off the StaleDocIdError we already raise: discover, validate,
+   retry once, remember for the process. Do not scrape bundles on startup.
+4. Prove it: force a stale id and watch it recover without touching the gist.
 
-You cannot build or run an APK from the tool environment. Write the code, and
-I will run `npx expo start` on my phone and paste back what breaks. Say so
-rather than claiming anything mobile is verified.
+Phase 4 (React Native) comes after. Do not start it in the same session
+without telling me first.
 
 Keep `npm test`, `npm run typecheck`, `npm run lint` and `npm run build`
-green, and commit each item separately.
+green, and commit each item separately. Say plainly what you have verified
+against the live site and what you have only tested.
 ```
 
 For a different phase, swap the numbered block. Two constraints worth repeating
