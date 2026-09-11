@@ -351,10 +351,36 @@ export async function verifySession(
     if (isSessionRejected(res.status, root)) {
       return { ok: false, error: "Instagram rejected those cookies. Check you copied them from a logged-in instagram.com tab." };
     }
-    const user = asRecord(root?.user);
-    const username = str(user?.username);
+    // A body that is not JSON is Instagram serving a page rather than answering
+    // the API -- in practice the login wall, reached by following a redirect.
+    // That is a rejected session, not a strange one, and saying so sends the
+    // reader somewhere useful.
+    if (!root) {
+      const looksLikeHtml = /^\s*<(!doctype|html)/i.test(text);
+      return {
+        ok: false,
+        error: looksLikeHtml
+          ? `Instagram served a login page instead of account data (HTTP ${res.status}). Those cookies are not being accepted — export them again from a logged-in tab.`
+          : `Instagram returned something unreadable (HTTP ${res.status}).`,
+      };
+    }
+
+    // The shape has moved between endpoints and versions, so read the places it
+    // has been rather than betting on one.
+    const username =
+      str(asRecord(root.user)?.username) ||
+      str(root.username) ||
+      str(asRecord(asRecord(root.data)?.user)?.username) ||
+      str(asRecord(asRecord(root.graphql)?.user)?.username);
+
     if (!username) {
-      return { ok: false, error: "Instagram accepted the request but returned no account. Try pasting fresh cookies." };
+      // Name the keys we did get. They are structure, not content, and they are
+      // the one thing that makes this diagnosable from a bug report.
+      const keys = Object.keys(root).slice(0, 8).join(", ") || "none";
+      return {
+        ok: false,
+        error: `Instagram answered (HTTP ${res.status}) but without an account. Fields returned: ${keys}.`,
+      };
     }
     return { ok: true, username };
   } catch (error) {

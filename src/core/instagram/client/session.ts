@@ -85,6 +85,11 @@ export class InstagramSession {
   authenticate(credentials: AuthCredentials): void {
     this.jar.clear();
     this.credentials = credentials;
+    // The rest of the export first, then the three we actually key on, so a
+    // stale duplicate in the export can never shadow the real values.
+    for (const [name, value] of Object.entries(credentials.cookies ?? {})) {
+      this.jar.set(name, value);
+    }
     this.jar.set("sessionid", credentials.sessionId);
     this.jar.set("ds_user_id", credentials.dsUserId);
     this.jar.set("csrftoken", credentials.csrfToken);

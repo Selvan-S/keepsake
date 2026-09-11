@@ -132,11 +132,42 @@ test("a Cookie-Editor export pasted as the bundle is the primary path", () => {
   ]);
   const parsed = parseCredentials({ bundle: exported });
   assert.equal(parsed.ok, true);
-  assert.deepEqual(parsed.ok && parsed.credentials, {
-    sessionId: SESSION_ID,
-    dsUserId: DS_USER_ID,
-    csrfToken: CSRF,
+  if (!parsed.ok) return;
+  assert.equal(parsed.credentials.sessionId, SESSION_ID);
+  assert.equal(parsed.credentials.dsUserId, DS_USER_ID);
+  assert.equal(parsed.credentials.csrfToken, CSRF);
+
+  // The companions come too. A sessionid travelling without mid/ig_did looks
+  // nothing like the browser that minted it, and Instagram answers that with a
+  // login redirect.
+  assert.deepEqual(parsed.credentials.cookies, {
+    ig_did: "AAA",
+    mid: "BBB",
+    csrftoken: CSRF,
+    ds_user_id: DS_USER_ID,
+    sessionid: SESSION_ID,
+    rur: "CCC",
   });
+});
+
+test("cookies from other sites are not dragged into the jar", () => {
+  // Exporting the whole browser is an easy mistake, and one we should not
+  // punish by sending someone else's cookies to Instagram.
+  const exported = JSON.stringify([
+    { name: "sessionid", value: SESSION_ID, domain: ".instagram.com" },
+    { name: "ds_user_id", value: DS_USER_ID, domain: ".instagram.com" },
+    { name: "csrftoken", value: CSRF, domain: ".instagram.com" },
+    { name: "auth_token", value: "someone-elses", domain: ".twitter.com" },
+    { name: "SID", value: "google-session", domain: ".google.com" },
+  ]);
+  const parsed = parseCredentials({ bundle: exported });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.deepEqual(Object.keys(parsed.credentials.cookies ?? {}).sort(), [
+    "csrftoken",
+    "ds_user_id",
+    "sessionid",
+  ]);
 });
 
 test("a logged-out export is diagnosed as logged-out, not as an empty form", () => {

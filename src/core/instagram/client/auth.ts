@@ -24,6 +24,17 @@ export type AuthCredentials = {
    * default and say so in the UI.
    */
   userAgent?: string;
+  /**
+   * Every other cookie from the same export.
+   *
+   * A real instagram.com session is not three cookies -- it also carries
+   * `mid`, `ig_did`, `datr`, `rur` and friends. Sending a `sessionid` with
+   * none of its companions looks nothing like the browser that minted it, and
+   * Instagram answers that with a login redirect. Keeping the whole set is
+   * both more likely to work and more consistent, which is the same reason we
+   * keep the User-Agent.
+   */
+  cookies?: Record<string, string>;
 };
 
 export const SESSION_REJECTED_MESSAGE =
@@ -49,7 +60,7 @@ const FIELD_BY_COOKIE: Record<string, keyof AuthCredentials> = {
  * paste mistakes (wrong cookie, truncated value, whole JSON blob in one box)
  * before we spend a request finding out.
  */
-const SHAPES: Record<keyof Omit<AuthCredentials, "userAgent">, RegExp> = {
+const SHAPES: Record<keyof Omit<AuthCredentials, "userAgent" | "cookies">, RegExp> = {
   // e.g. "12345678%3AAbCdEf...%3A26%3AAY..." -- digits, then percent-encoded
   // separators. Kept loose because the tail format has changed before.
   sessionId: /^[0-9]+(%3A|:)[\w%.-]{10,}$/i,
@@ -57,7 +68,7 @@ const SHAPES: Record<keyof Omit<AuthCredentials, "userAgent">, RegExp> = {
   csrfToken: /^[A-Za-z0-9]{16,64}$/,
 };
 
-const LABELS: Record<keyof Omit<AuthCredentials, "userAgent">, string> = {
+const LABELS: Record<keyof Omit<AuthCredentials, "userAgent" | "cookies">, string> = {
   sessionId: "sessionid",
   dsUserId: "ds_user_id",
   csrfToken: "csrftoken",
@@ -119,6 +130,59 @@ export function extractCookies(input: string): Partial<Record<string, string>> {
     if (key in FIELD_BY_COOKIE) found[key] = stripQuotes(chunk.slice(eq + 1));
   }
   return found;
+}
+
+/** Cookie names that are never worth carrying, whatever the export holds. */
+const COOKIE_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
+const MAX_COOKIES = 40;
+const MAX_COOKIE_VALUE = 4096;
+
+/**
+ * Every instagram.com cookie in a paste, not just the three we key on.
+ *
+ * Entries carrying a domain are filtered to Instagram's, so exporting the whole
+ * browser does not drag another site's cookies into our jar.
+ */
+export function extractAllCookies(input: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const text = input.trim();
+  if (!text) return out;
+
+  const keep = (name: string, value: string) => {
+    const key = name.trim();
+    if (!COOKIE_NAME.test(key)) return;
+    if (!value || value.length > MAX_COOKIE_VALUE) return;
+    if (Object.keys(out).length >= MAX_COOKIES && !(key in out)) return;
+    out[key] = value.trim();
+  };
+
+  if (/^[[{]/.test(text)) {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      const list = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { cookies?: unknown })?.cookies)
+          ? (parsed as { cookies: unknown[] }).cookies
+          : [];
+      for (const entry of list) {
+        if (!entry || typeof entry !== "object") continue;
+        const rec = entry as { name?: unknown; value?: unknown; domain?: unknown };
+        if (typeof rec.name !== "string" || typeof rec.value !== "string") continue;
+        if (typeof rec.domain === "string" && !rec.domain.includes("instagram.com")) continue;
+        keep(rec.name, rec.value);
+      }
+      if (Object.keys(out).length > 0) return out;
+    } catch {
+      /* fall through to the pair scan */
+    }
+  }
+
+  for (const chunk of text.replace(/^cookie:\s*/i, "").split(/[;\n\r]+/)) {
+    const eq = chunk.indexOf("=");
+    if (eq <= 0) continue;
+    keep(chunk.slice(0, eq), stripQuotes(chunk.slice(eq + 1)));
+  }
+  return out;
 }
 
 /**
@@ -237,6 +301,9 @@ export function parseCredentials(input: {
   }
 
   const userAgent = (input.userAgent || "").trim();
+  // Carry the rest of the export so the session looks like the browser it came
+  // from, not like three cookies in a trench coat.
+  const cookies = extractAllCookies(bundle || input.sessionId || "");
   return {
     ok: true,
     credentials: {
@@ -244,6 +311,7 @@ export function parseCredentials(input: {
       dsUserId: resolved.dsUserId,
       csrfToken: resolved.csrfToken,
       ...(userAgent ? { userAgent } : {}),
+      ...(Object.keys(cookies).length > 0 ? { cookies } : {}),
     },
   };
 }

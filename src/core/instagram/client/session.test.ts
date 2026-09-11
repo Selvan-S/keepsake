@@ -44,6 +44,26 @@ test("authenticating replaces anonymous state rather than mixing with it", async
   assert.equal(session.accountId, CREDENTIALS.dsUserId);
 });
 
+test("the whole cookie set travels, with the keyed three winning", () => {
+  const { transport } = stub();
+  const session = new InstagramSession({ transport });
+  session.authenticate({
+    ...CREDENTIALS,
+    cookies: {
+      mid: "MID",
+      ig_did: "DID",
+      // A stale duplicate in the export must not shadow the real value.
+      sessionid: "stale-and-wrong",
+    },
+  });
+  assert.equal(session.cookies.get("mid"), "MID");
+  assert.equal(session.cookies.get("ig_did"), "DID");
+  assert.equal(session.cookies.get("sessionid"), CREDENTIALS.sessionId);
+  const header = session.cookieHeader();
+  assert.match(header, /mid=MID/);
+  assert.equal(header.includes("stale-and-wrong"), false);
+});
+
 test("an authenticated session never anonymises itself by bootstrapping", async () => {
   const { transport, calls } = stub();
   const session = new InstagramSession({ transport });
