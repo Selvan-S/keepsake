@@ -1,10 +1,11 @@
 import { memo } from "react";
-import { Download, Film, Image as ImageIcon, LoaderCircle, Play } from "lucide-react";
+import { Check, Download, Film, Image as ImageIcon, LoaderCircle, Play } from "lucide-react";
 import type { PostResult } from "@/core/instagram/types";
 import { displayUrl } from "@/lib/media/source";
 import { fileName } from "@/core/archive/naming";
 import { saveHref } from "@/lib/download/share";
 import { formatDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SaveLink } from "./save-link";
@@ -24,6 +25,9 @@ function MediaTileImpl({
   busyKey,
   onOpen,
   onDownloadAll,
+  selecting,
+  selected,
+  onToggleSelect,
 }: {
   post: PostResult;
   index: number;
@@ -33,18 +37,47 @@ function MediaTileImpl({
   // memo below entirely.
   onOpen: (post: PostResult, itemIndex: number) => void;
   onDownloadAll: (post: PostResult) => void;
+  selecting: boolean;
+  selected: boolean;
+  onToggleSelect: (post: PostResult) => void;
 }) {
   const cover = post.items[0];
   const saving = busyKey === `${post.shortcode}-all`;
   const single = post.items[0];
   const singleName = single ? fileName(post, 0, single.kind, single.url) : "";
   return (
-    <article className="overflow-hidden rounded-xl bg-bg-elevated shadow-[var(--shadow-border)]">
+    <article
+      className={cn(
+        "overflow-hidden rounded-xl bg-bg-elevated shadow-[var(--shadow-border)]",
+        selected && "outline outline-2 outline-offset-2 outline-[var(--color-primary)]",
+      )}
+    >
       <button
         type="button"
-        onClick={() => onOpen(post, 0)}
+        // While selecting, the tile picks rather than opens -- a lightbox on
+        // every tap would make choosing twenty things unbearable.
+        onClick={() => (selecting ? onToggleSelect(post) : onOpen(post, 0))}
+        onContextMenu={(e) => {
+          // Long-press on a phone, right-click on a desktop: the usual way into
+          // a selection without a mode switch first.
+          e.preventDefault();
+          onToggleSelect(post);
+        }}
+        aria-pressed={selecting ? selected : undefined}
         className="group relative block aspect-[4/5] w-full overflow-hidden bg-bg-subtle"
       >
+        {selecting ? (
+          <span
+            className={cn(
+              "absolute left-3 top-3 z-10 flex size-6 items-center justify-center rounded-full border-2",
+              selected
+                ? "border-[var(--color-primary)] bg-primary text-primary-fg"
+                : "border-fg/60 bg-bg/70",
+            )}
+          >
+            {selected ? <Check className="size-3.5" /> : null}
+          </span>
+        ) : null}
         {cover ? (
           <img
             src={displayUrl(cover.thumbnailUrl || cover.url)}
@@ -56,9 +89,11 @@ function MediaTileImpl({
         ) : (
           <div className="flex h-full items-center justify-center text-subtle">No preview</div>
         )}
-        <span className="absolute left-3 top-3 font-mono text-[11px] tabular-nums text-fg/90">
-          {String(index + 1).padStart(2, "0")}
-        </span>
+        {!selecting ? (
+          <span className="absolute left-3 top-3 font-mono text-[11px] tabular-nums text-fg/90">
+            {String(index + 1).padStart(2, "0")}
+          </span>
+        ) : null}
         <span className="absolute right-3 top-3">
           <Badge className="bg-bg/70 backdrop-blur-sm">{kindLabel(post.kind)}</Badge>
         </span>

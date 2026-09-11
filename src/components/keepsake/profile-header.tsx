@@ -11,6 +11,8 @@ export function ProfileHeader({
   onTab,
   onSaveTab,
   onSaveProfile,
+  onSelect,
+  selecting,
   savingTab,
   savingProfile,
   fillNote,
@@ -21,6 +23,8 @@ export function ProfileHeader({
   onTab: (tab: ProfileTab) => void;
   onSaveTab: () => void;
   onSaveProfile: () => void;
+  onSelect: () => void;
+  selecting: boolean;
   savingTab: boolean;
   savingProfile: boolean;
   fillNote: string | null;
@@ -73,6 +77,8 @@ export function ProfileHeader({
         tab={tab}
         onSaveTab={onSaveTab}
         onSaveProfile={onSaveProfile}
+        onSelect={onSelect}
+        selecting={selecting}
         savingTab={savingTab}
         savingProfile={savingProfile}
         archiveCount={archiveCount}

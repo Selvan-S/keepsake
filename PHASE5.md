@@ -160,8 +160,12 @@ multi-batch job, never on load. Degrade silently if refused.
    what is on disk, which is a truer record than the shortcode list. Zip
    batches remain the fallback for browsers without it (Firefox, Safari,
    Android Chrome).
-5. Per-tab full download.
-6. Selection mode.
+5. **Done.** Per-tab full download — "Save all posts" opens the same dialog
+   scoped to one tab, so it archives the whole tab rather than what is on
+   screen.
+6. **Done.** Selection mode — long-press or right-click a tile, or the Select
+   button. Selected posts skip collection entirely and go straight to the
+   destination picker.
 7. Notifications.
 
 Steps 1–3 are the bug fix. **Not yet verified against a real archive run** —

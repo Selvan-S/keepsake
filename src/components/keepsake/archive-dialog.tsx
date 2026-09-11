@@ -47,14 +47,22 @@ export function ArchiveDialog({
   profile,
   archive,
   authenticated,
+  initialTabs,
+  only,
   onClose,
 }: {
   profile: ProfileResult;
   archive: ArchiveApi;
   authenticated: boolean;
+  /** Narrower starting scope, e.g. "Save reels" on one tab. */
+  initialTabs?: ProfileTab[];
+  /** A specific set of posts. Collection and depth do not apply to these. */
+  only?: ReadonlySet<string>;
   onClose: () => void;
 }) {
-  const [tabs, setTabs] = useState<ProfileTab[]>(["posts", "reels", "highlights", "stories"]);
+  const [tabs, setTabs] = useState<ProfileTab[]>(
+    initialTabs ?? ["posts", "reels", "highlights", "stories"],
+  );
   const [everything, setEverything] = useState(true);
   const [limit, setLimit] = useState(120);
   const [confirmedLarge, setConfirmedLarge] = useState(false);
@@ -88,7 +96,11 @@ export function ArchiveDialog({
       current.includes(tab) ? current.filter((t) => t !== tab) : [...current, tab],
     );
 
-  const scope: ArchiveScope = { tabs, perTabLimit: everything ? null : limit };
+  // A selection is already in memory, so there is nothing to collect and no
+  // depth to choose -- only a destination.
+  const scope: ArchiveScope = only
+    ? { tabs, perTabLimit: null, only }
+    : { tabs, perTabLimit: everything ? null : limit };
 
   const begin = (resumePrevious: boolean) => {
     void archive.start(scope, { resume: resumePrevious, toFolder });
@@ -108,9 +120,19 @@ export function ArchiveDialog({
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-display text-2xl tracking-[-0.03em]">Archive @{profile.username}</h2>
+            <h2 className="font-display text-2xl tracking-[-0.03em]">
+              {only
+                ? `Save ${plural(only.size, "item")}`
+                : initialTabs?.length === 1
+                  ? `Save all ${initialTabs[0]}`
+                  : `Archive @${profile.username}`}
+            </h2>
             <p className="mt-1 text-sm text-muted">
-              {running ? state.label : "Choose what to include."}
+              {running
+                ? state.label
+                : only
+                  ? `From @${profile.username}.`
+                  : "Choose what to include."}
             </p>
           </div>
           <Button
@@ -148,6 +170,7 @@ export function ArchiveDialog({
               </div>
             ) : null}
 
+            {!only && !initialTabs ? (
             <fieldset className="mt-4">
               <legend className="text-xs uppercase tracking-[0.16em] text-subtle">Include</legend>
               <div className="mt-2 grid gap-2">
@@ -176,7 +199,9 @@ export function ArchiveDialog({
                 })}
               </div>
             </fieldset>
+            ) : null}
 
+            {!only ? (
             <fieldset className="mt-4">
               <legend className="text-xs uppercase tracking-[0.16em] text-subtle">How much</legend>
               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -210,6 +235,7 @@ export function ArchiveDialog({
                 <span className="text-xs text-subtle">per tab</span>
               </div>
             </fieldset>
+            ) : null}
 
             <fieldset className="mt-4">
               <legend className="text-xs uppercase tracking-[0.16em] text-subtle">Save as</legend>
@@ -259,14 +285,15 @@ export function ArchiveDialog({
             </fieldset>
 
             <p className="mt-4 text-xs leading-relaxed text-subtle">
-              Roughly {expectedPosts.toLocaleString()} posts, and carousels count as several
-              files each.{" "}
+              {only
+                ? `${plural(only.size, "item")} selected, and carousels count as several files each. `
+                : `Roughly ${expectedPosts.toLocaleString()} posts, and carousels count as several files each. `}
               {toFolder
                 ? "Files are written as they arrive, so you can stop any time and re-run later to pick up the rest."
                 : `That is at least ${estimateBatchCount(expectedPosts)} zip${estimateBatchCount(expectedPosts) === 1 ? "" : "s"}, saved one at a time — the browser will not accept them all at once.`}
             </p>
 
-            {isLarge && !confirmedLarge ? (
+            {isLarge && !confirmedLarge && !only ? (
               <div className="mt-3 rounded-lg bg-bg-subtle px-3 py-3 text-xs leading-relaxed text-muted">
                 That is a large archive. It will take a while and make a lot of requests. You can
                 stop after any batch and resume later.
@@ -284,10 +311,10 @@ export function ArchiveDialog({
                 size="lg"
                 className="flex-1"
                 onClick={() => begin(false)}
-                disabled={tabs.length === 0 || (isLarge && !confirmedLarge)}
+                disabled={tabs.length === 0 || (isLarge && !confirmedLarge && !only)}
               >
                 <Download className="size-4" />
-                Start archive
+                {only ? "Save selected" : "Start archive"}
               </Button>
               <Button type="button" variant="secondary" size="lg" onClick={onClose}>
                 Cancel

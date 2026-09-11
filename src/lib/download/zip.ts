@@ -1,6 +1,6 @@
-import type { PostResult, ProfileTab } from "@/core/instagram/types";
+import type { PostResult } from "@/core/instagram/types";
 import { fetchUrl } from "@/lib/media/source";
-import { entriesFromPosts, fileName } from "@/core/archive/naming";
+import { fileName } from "@/core/archive/naming";
 import { shareOrDownload, type SaveOutcome } from "./share";
 
 const ZIP_LIMIT = 100;
@@ -74,10 +74,3 @@ export function downloadPostZip(post: PostResult): Promise<ZipOutcome> {
   );
 }
 
-export function downloadFeedZip(
-  username: string,
-  tab: ProfileTab,
-  posts: PostResult[],
-): Promise<ZipOutcome> {
-  return zipMedia(entriesFromPosts(username, tab, posts), `${username}_${tab}.zip`);
-}

@@ -1,4 +1,4 @@
-import { Download, LoaderCircle } from "lucide-react";
+import { CheckSquare, Download, LoaderCircle } from "lucide-react";
 import type { ProfileResult, ProfileTab } from "@/core/instagram/types";
 import { Button } from "@/components/ui/button";
 
@@ -7,6 +7,8 @@ export function DownloadBar({
   tab,
   onSaveTab,
   onSaveProfile,
+  onSelect,
+  selecting,
   savingTab,
   savingProfile,
   archiveCount,
@@ -15,6 +17,8 @@ export function DownloadBar({
   tab: ProfileTab;
   onSaveTab: () => void;
   onSaveProfile: () => void;
+  onSelect: () => void;
+  selecting: boolean;
   savingTab: boolean;
   savingProfile: boolean;
   archiveCount: number;
@@ -41,7 +45,18 @@ export function DownloadBar({
         disabled={savingTab || feed.items.length === 0}
       >
         {savingTab ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
-        Save {tab}
+        Save all {tab}
+      </Button>
+      <Button
+        type="button"
+        variant={selecting ? "primary" : "secondary"}
+        size="lg"
+        className="h-11"
+        onClick={onSelect}
+        disabled={feed.items.length === 0}
+      >
+        <CheckSquare className="size-4" />
+        {selecting ? "Selecting" : "Select"}
       </Button>
     </div>
   );

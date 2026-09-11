@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Aperture } from "lucide-react";
-import type { PostResult } from "@/core/instagram/types";
+import type { PostResult, ProfileTab } from "@/core/instagram/types";
 import { useDownloads } from "@/hooks/use-downloads";
 import { useProfilePaging } from "@/hooks/use-profile-paging";
 import { useResolve } from "@/hooks/use-resolve";
 import { useSession } from "@/hooks/use-session";
 import { useArchive } from "@/hooks/use-archive";
 import { cn } from "@/lib/utils";
-import { GRID_PAGE, HighlightFilter, LoadMoreBar, MediaGrid, ShowMore, TabLoading } from "./media-grid";
+import {
+  GRID_PAGE,
+  HighlightFilter,
+  LoadMoreBar,
+  MediaGrid,
+  SelectionBar,
+  ShowMore,
+  TabLoading,
+} from "./media-grid";
 import { Lightbox } from "./lightbox";
 import { ProfileHeader } from "./profile-header";
 import { SearchBar } from "./search-bar";
@@ -23,14 +31,23 @@ import { EmptyTab, LoadingState, ResolveError } from "./states";
 export function KeepsakeApp() {
   const resolve = useResolve();
   const paging = useProfilePaging(resolve);
-  const downloads = useDownloads(resolve);
+  const downloads = useDownloads();
   const session = useSession();
   const archive = useArchive(resolve, paging);
 
   const { loading, result, profile, tab, setTab, rawPosts } = resolve;
   const [lightbox, setLightbox] = useState<{ post: PostResult; index: number } | null>(null);
   const [highlightFilter, setHighlightFilter] = useState("all");
-  const [archiveOpen, setArchiveOpen] = useState(false);
+  /**
+   * What the archive dialog is scoped to when open: the whole profile, one tab,
+   * or a hand-picked set. One dialog for all three keeps the destination and
+   * resume handling in a single place.
+   */
+  const [archiveRequest, setArchiveRequest] = useState<
+    { tabs?: ProfileTab[]; only?: ReadonlySet<string> } | null
+  >(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   // How many tiles are rendered, independent of how many are loaded.
   const [visible, setVisible] = useState(GRID_PAGE);
 
@@ -45,10 +62,21 @@ export function KeepsakeApp() {
     },
     [downloads],
   );
+  const toggleSelect = useCallback((post: PostResult) => {
+    setSelecting(true);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(post.shortcode)) next.delete(post.shortcode);
+      else next.add(post.shortcode);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     setHighlightFilter("all");
     setVisible(GRID_PAGE);
+    setSelecting(false);
+    setSelected(new Set());
   }, [profile?.username, tab]);
 
   const albums = useMemo(() => {
@@ -130,8 +158,10 @@ export function KeepsakeApp() {
             profile={profile}
             tab={tab}
             onTab={setTab}
-            onSaveTab={() => void downloads.downloadTab(tab, posts)}
-            onSaveProfile={() => setArchiveOpen(true)}
+            onSaveTab={() => setArchiveRequest({ tabs: [tab] })}
+            onSaveProfile={() => setArchiveRequest({})}
+            onSelect={() => setSelecting((v) => !v)}
+            selecting={selecting}
             savingTab={downloads.busyKey === "feed-tab"}
             savingProfile={downloads.busyKey === "feed-all"}
             fillNote={paging.fillNote}
@@ -157,12 +187,28 @@ export function KeepsakeApp() {
               busyKey={downloads.busyKey}
               onOpen={openLightbox}
               onDownloadPost={downloadPost}
+              selecting={selecting}
+              selected={selected}
+              onToggleSelect={toggleSelect}
             />
             <ShowMore
               shown={Math.min(visible, posts.length)}
               total={posts.length}
               onMore={() => setVisible((v) => v + GRID_PAGE)}
             />
+            {selecting ? (
+              <SelectionBar
+                count={selected.size}
+                total={posts.length}
+                onSelectAll={() => setSelected(new Set(posts.map((p) => p.shortcode)))}
+                onClear={() => setSelected(new Set())}
+                onSave={() => setArchiveRequest({ tabs: [tab], only: selected })}
+                onExit={() => {
+                  setSelecting(false);
+                  setSelected(new Set());
+                }}
+              />
+            ) : null}
           </>
         ) : null}
 
@@ -181,12 +227,14 @@ export function KeepsakeApp() {
         ) : null}
       </main>
 
-      {archiveOpen && profile ? (
+      {archiveRequest && profile ? (
         <ArchiveDialog
           profile={profile}
           archive={archive}
           authenticated={session.authenticated}
-          onClose={() => setArchiveOpen(false)}
+          initialTabs={archiveRequest.tabs}
+          only={archiveRequest.only}
+          onClose={() => setArchiveRequest(null)}
         />
       ) : null}
 
