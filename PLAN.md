@@ -14,6 +14,38 @@ verifiable; do not start a phase before the one above it is green.
   Phase 4). Structure decisions should protect that, not fight it.
 - **Auth is opt-in and account-safety-first.** See Phase 3.
 
+## Current status (2026-09-11)
+
+Phases 0-3 and 5 are done and running on the web app. Phase 4 (React Native) has
+its groundwork in place but the app itself is not started.
+
+**Verified against the live site**, not just tests:
+
+- Anonymous resolve, paging, and a full profile archive.
+- Remote `doc_id` config, loading from a gist and overriding the built-ins.
+- Signing in with a pasted cookie export: returns the right handle, and
+  **stories load**, which is the thing the login is for.
+- Selection mode.
+- Folder mode is implemented but **unverified end to end** (Chromium desktop
+  only); so is the zip-batch fallback since folder mode became the default.
+
+### Known issues
+
+1. **Reels do not appear when signed in.** Reported after stories started
+   working. `fetchReelsPage` has three paths that return `emptyFeed()` — a
+   non-OK status, unparseable JSON, and a thrown request — so a failing
+   `/api/v1/clips/user/` call is indistinguishable from an account with no
+   reels. That swallowing is a defect regardless of the cause, and is the same
+   "confident and wrong" pattern `loaded` and the stale-`doc_id` error were
+   added to kill. **Fix the reporting first, then read what it actually says.**
+   Note reels did work anonymously earlier in the day, so suspect either the
+   authenticated headers or a changed endpoint contract.
+2. **`doc_id`s rotate often.** They went stale mid-session on 2026-09-11 while
+   the app was otherwise working. When anything returns nothing, check the
+   error text: a rotation now names this runbook.
+3. Notifications (Phase 5 step 7) are unbuilt, and largely moot on the folder
+   path since it runs unattended.
+
 ## The `doc_id` problem (read before touching `fetch.server.ts`)
 
 Instagram's GraphQL uses *persisted queries*: every query the official client may
@@ -354,31 +386,42 @@ Android-first. Sideloaded APK, no store.
 Paste this to pick up where the last session left off:
 
 ```
-Read PLAN.md, then work through Phase 0.
+Read PLAN.md and PHASE5.md, then start Phase 4 — the React Native / Expo app.
 
-Context: Keepsake is a personal Instagram archiver, local-only, distributed
-as a sideloaded APK to a few friends. Never an app store. Node 22.12+ —
-run `nvm use` first, the default on this machine is Node 20 and the tests
-will not run on it.
+Context: Keepsake is a personal Instagram archiver, local-only, distributed as
+a sideloaded APK to a few friends. Never an app store. Node 22.12+ — run
+`nvm use` first; the default on this machine is Node 20 and the tests will not
+run on it. Set KEEPSAKE_DOC_ID_URL before starting the dev server (see README).
 
-Phase 0, in order:
-1. Detect a stale-doc_id rejection in fetch.server.ts and surface a clear
-   error naming the PLAN.md runbook, instead of a generic failure.
-2. Fetch the three doc_ids at startup from a remote URL with the current
-   hardcoded values as fallback, so a rotation can be fixed without
-   rebuilding every APK. Ask me for the URL.
-3. Cut AUTO_PAGES in keepsake-app.tsx to a single page of previews, and
-   load the rest only on explicit user action.
-4. Add .npmrc with engine-strict=true.
+Before Phase 4, fix this bug: reels do not appear when signed in.
+fetchReelsPage swallows three different failures into an empty feed, so it
+cannot tell "no reels" from "the request failed". Make it report the
+difference first, then diagnose with what it says.
+
+Then Phase 4, in order:
+1. Restructure so the mobile app and the web app share src/core — a workspace,
+   or point Metro at it directly. Do not copy core.
+2. An HttpTransport backed by React Native's native fetch. Check the two
+   globals src/core/portability.test.ts flags: AbortSignal.timeout and
+   crypto.randomUUID are missing on RN and need polyfilling or injecting.
+3. Swap src/lib/media/source.ts for the identity implementation and delete
+   /api/media — RN has no CORS problem, so the proxy stops being needed.
+4. expo-media-library for saving, behind the existing share.ts signature.
+5. The Android share-target intent filter. This is the actual reason for the
+   phase; it needs a development build, not Expo Go.
+
+You cannot build or run an APK from the tool environment. Write the code, and
+I will run `npx expo start` on my phone and paste back what breaks. Say so
+rather than claiming anything mobile is verified.
 
 Keep `npm test`, `npm run typecheck`, `npm run lint` and `npm run build`
-green, and commit each item separately. Do not start Phase 1 in the same
-session without telling me first.
+green, and commit each item separately.
 ```
 
-For a later session, swap the Phase 0 block for the phase you are on. Phase 1 is
-a pure refactor — say so explicitly in the prompt, because "no behavior change,
-the 18 tests must stay green" is the constraint that keeps it safe.
+For a different phase, swap the numbered block. Two constraints worth repeating
+in any prompt, because they are what kept the earlier phases safe: say
+explicitly when something is a pure refactor with no behaviour change, and say
+what has *not* been verified against the live site.
 
 ## Standing constraints
 

@@ -168,6 +168,21 @@ The trade-off you are accepting: **the cookie extension becomes a trusted
 component**, since it can read cookies for every site. Install only a reputable
 open-source one from the official store.
 
+## Archiving a whole profile
+
+**Save profile** opens a dialog: which tabs, how deep, and where it goes.
+
+On Chromium desktop you can pick a **folder**, and files are written straight
+into `username/posts/...` as they download — no zips, nothing held in memory,
+and anything already on disk is skipped, so running it again tops the same
+folder up. Everywhere else (Firefox, Safari, Android Chrome) it falls back to
+**zips in batches**, one tap each, because browsers refuse a run of
+programmatic downloads.
+
+**Save all posts** does the same for one tab. **Select** (or long-press a tile)
+picks individual posts; those are already loaded, so they skip straight to
+saving.
+
 ## Scope
 
 Personal, local, single-user. There is no auth, no database, and no rate

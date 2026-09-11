@@ -166,7 +166,18 @@ multi-batch job, never on load. Degrade silently if refused.
 6. **Done.** Selection mode — long-press or right-click a tile, or the Select
    button. Selected posts skip collection entirely and go straight to the
    destination picker.
-7. Notifications.
+7. Notifications — **not built**, and largely moot on the folder path, which
+   runs unattended. Only worth it for the zip fallback.
+
+## Verified, and not
+
+Confirmed against the live site: full-profile archive, per-tab archive, and
+selection. Stories load once signed in.
+
+Not verified: folder mode end to end (Chromium desktop only), the zip-batch
+fallback now that folder mode is the default, and resume across a reload.
+
+Open: reels return empty when signed in — see Known issues in PLAN.md.
 
 Steps 1–3 are the bug fix. **Not yet verified against a real archive run** —
 the batching, resume and save-per-batch paths have only been exercised by
