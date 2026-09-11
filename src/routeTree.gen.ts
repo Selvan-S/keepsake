@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiMediaRouteImport } from './routes/api/media'
 import { Route as ApiProfileRouteImport } from './routes/api/profile'
 import { Route as ApiResolveRouteImport } from './routes/api/resolve'
+import { Route as ApiSessionRouteImport } from './routes/api/session'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const ApiResolveRoute = ApiResolveRouteImport.update({
   path: '/api/resolve',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSessionRoute = ApiSessionRouteImport.update({
+  id: '/api/session',
+  path: '/api/session',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/media': typeof ApiMediaRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/resolve': typeof ApiResolveRoute
+  '/api/session': typeof ApiSessionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/media': typeof ApiMediaRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/resolve': typeof ApiResolveRoute
+  '/api/session': typeof ApiSessionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,21 @@ export interface FileRoutesById {
   '/api/media': typeof ApiMediaRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/resolve': typeof ApiResolveRoute
+  '/api/session': typeof ApiSessionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/media' | '/api/profile' | '/api/resolve'
+  fullPaths:
+    '/' | '/api/media' | '/api/profile' | '/api/resolve' | '/api/session'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/media' | '/api/profile' | '/api/resolve'
-  id: '__root__' | '/' | '/api/media' | '/api/profile' | '/api/resolve'
+  to: '/' | '/api/media' | '/api/profile' | '/api/resolve' | '/api/session'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/media'
+    | '/api/profile'
+    | '/api/resolve'
+    | '/api/session'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +83,7 @@ export interface RootRouteChildren {
   ApiMediaRoute: typeof ApiMediaRoute
   ApiProfileRoute: typeof ApiProfileRoute
   ApiResolveRoute: typeof ApiResolveRoute
+  ApiSessionRoute: typeof ApiSessionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +116,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiResolveRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/session': {
+      id: '/api/session'
+      path: '/api/session'
+      fullPath: '/api/session'
+      preLoaderRoute: typeof ApiSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +131,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMediaRoute: ApiMediaRoute,
   ApiProfileRoute: ApiProfileRoute,
   ApiResolveRoute: ApiResolveRoute,
+  ApiSessionRoute: ApiSessionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

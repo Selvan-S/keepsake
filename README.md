@@ -6,6 +6,8 @@ or a zip.
 
 Runs entirely on your machine. Nothing is uploaded anywhere.
 
+See [PLAN.md](PLAN.md) for the development roadmap and the `doc_id` runbook.
+
 ## Requirements
 
 Node **22.12+** (TanStack Start requires it). If you use nvm:
@@ -36,13 +38,25 @@ Other scripts:
 
 ```
 src/routes/index.tsx        -> renders the whole UI
-src/components/keepsake-app.tsx  -> all UI state, tabs, downloads, zipping
+src/components/keepsake/    -> presentational components (composition in index)
+src/hooks/                  -> use-resolve / use-profile-paging / use-downloads
+src/lib/download/           -> naming, zip assembly, share.ts platform seam
 src/routes/api/resolve.ts   -> POST a query, get a profile or a single post
 src/routes/api/profile.ts   -> POST a cursor, get the next page of a tab
 src/routes/api/media.ts     -> media proxy (see below)
-src/lib/instagram/parse.ts  -> turns pasted text into usernames/shortcodes
-src/lib/instagram/fetch.server.ts -> talks to Instagram, normalizes responses
+src/core/instagram/          -> all Instagram knowledge, no platform deps
+  parse.ts                  -> turns pasted text into usernames/shortcodes
+  normalize/                -> GraphQL JSON -> our types (pure)
+  client/transport.ts       -> the HttpTransport seam
+  client/session.ts         -> cookie jar + anonymous bootstrap
+  client/endpoints.ts       -> fetchProfile / fetchProfileTab / resolve
+src/lib/instagram/fetch.server.ts -> web binding: global fetch, env, proxy
 ```
+
+`src/core/` imports no DOM, no Node and no framework: it takes an
+`HttpTransport` and never calls `fetch` itself. That is what lets a React Native
+port reuse it as-is (Phase 4) and what lets the endpoints be tested against a
+stub instead of the live site.
 
 Two things are worth knowing before changing any of this:
 
@@ -54,13 +68,120 @@ in `media-url.ts` restricts that proxy to Instagram CDN hosts — keep it that
 way, or the endpoint becomes an open relay.
 
 **It depends on Instagram's private API.** `fetch.server.ts` calls internal
-GraphQL endpoints using hardcoded `doc_id` constants and a spoofed mobile
+GraphQL endpoints using `doc_id` persisted-query ids and a spoofed mobile
 user-agent, with a cookie jar bootstrapped from a logged-out session. Meta
 rotates those ids without notice. When the app suddenly returns nothing, the
-`doc_id`s are the first thing to check — not your code.
+`doc_id`s are the first thing to check — not your code. A rotation is now
+detected and reported as such rather than surfacing as a generic failure.
+
+### Keeping the `doc_id`s current
+
+Every distributed copy freezes at the ids compiled into it, so Keepsake reads
+them at startup from a URL you control, falling back to the built-in values if
+that is unavailable. Set the URL at build time:
+
+```sh
+KEEPSAKE_DOC_ID_URL=https://gist.githubusercontent.com/<you>/<id>/raw/doc-ids.json
+```
+
+Create that file yourself — a GitHub gist is enough — with the ids from the
+runbook in [PLAN.md](PLAN.md):
+
+```json
+{
+  "POST_DOC_ID": "27128499623469141",
+  "TIMELINE_DOC_ID": "34579740524958711",
+  "HIGHLIGHTS_TRAY_DOC_ID": "9957820854288654"
+}
+```
+
+Use the **raw URL without the revision hash** — the hashed form is frozen at one
+version and would defeat the point. Keys may also be written `post`, `timeline`
+and `highlightsTray`; a file may specify only the ids that changed. When the ids
+rotate, edit that one file and every installed copy recovers without a rebuild.
+
+If `KEEPSAKE_DOC_ID_URL` is unset the app still runs on its built-in ids, but
+logs a warning at startup: that copy can only be fixed by rebuilding it.
+
+**A search makes two requests, not eight.** Resolving a profile used to fan out
+to the timeline, reels, stories and the highlights tray (which is itself up to
+three requests) in one burst, whether or not anyone opened those tabs. Burst
+volume from one address is what gets an account or IP blocked, so `fetchProfile`
+now does a single timeline request and marks the other tabs `loaded: false`;
+they are fetched by `fetchProfileTab` when their tab is opened. "Download
+everything" loads the missing tabs first, sequentially, so the zip still means
+everything.
 
 Some fields are simply unavailable to logged-out requests (follower counts come
 back as `0`, for instance). The UI hides those rather than showing zeroes.
+
+## Optional: signing in
+
+Keepsake works signed out. Signing in only adds what a logged-in browser can
+already see — mainly **stories and highlights**, which Instagram hides from
+logged-out tools even for public accounts.
+
+**It does not unlock private accounts you do not already follow.** Nothing does.
+
+### Use a secondary account
+
+Scraping with a session cookie is against Instagram's terms and is the pattern
+their automated-access detection weights most heavily. An anonymous block costs
+you a retry; an account block costs you the account. Do not point this at an
+account you cannot lose.
+
+### How it works
+
+You log in with **your own browser** and paste only the resulting cookies.
+Keepsake never sees your password, never renders a login form, and never
+injects script into one — that is the entire reason for the clunkier flow.
+
+1. Install **Firefox for Android** or **Quetta** — both support real extensions.
+   Not Kiwi: archived January 2025 and frozen on Manifest V2.
+2. From the official add-on store, install a well-known open-source cookie
+   extension such as Cookie-Editor.
+3. Log in to `instagram.com` there. Expect a one-time new-device check.
+4. On `instagram.com`, open the extension and hit **Export** — it copies every
+   cookie as JSON.
+5. Paste the whole export into the setup panel, then **clear your clipboard**.
+
+Only `sessionid`, `ds_user_id` and `csrftoken` are read out of it; every other
+cookie in the export is ignored and never stored. If you would rather not paste
+the lot, the panel also takes the three values individually.
+
+Also paste your browser's **User-Agent** if you can. Without it, requests claim
+to be a Pixel 8, which contradicts the device the session was actually created
+on — and inconsistency is itself a signal.
+
+### What Keepsake does with them
+
+- Held **in the local server process's memory only**. Never written to disk,
+  never logged, never returned to the browser, never in `localStorage`.
+- **A server restart signs you out.** Deliberate: the web build has no keystore
+  to put a secret in. Persistence arrives with the Android build.
+- Checked against Instagram before they are kept. A bad paste fails at the setup
+  panel with a reason, not as a mysterious empty tab later.
+- Authenticated requests are spaced **1200ms apart** — slower than anonymous,
+  on purpose.
+
+The trade-off you are accepting: **the cookie extension becomes a trusted
+component**, since it can read cookies for every site. Install only a reputable
+open-source one from the official store.
+
+## Archiving a whole profile
+
+**Save profile** opens a dialog: which tabs, how deep, and where it goes.
+
+On Chromium desktop you can pick a **folder**, and files are written straight
+into `username/posts/...` as they download — no zips, nothing held in memory,
+and anything already on disk is skipped, so running it again tops the same
+folder up. Everywhere else (Firefox, Safari, Android Chrome) it falls back to
+**zips in batches**, one tap each, because browsers refuse a run of
+programmatic downloads.
+
+**Save all posts** does the same for one tab. **Select** (or long-press a tile)
+picks individual posts; those are already loaded, so they skip straight to
+saving.
 
 ## Scope
 

@@ -37,6 +37,12 @@ export type ProfileFeed = {
   items: PostResult[];
   cursor: string | null;
   hasMore: boolean;
+  /**
+   * False when this tab was deliberately not fetched yet, so the UI can tell
+   * "nothing here" apart from "not asked for yet". A search only loads the
+   * Posts preview; the rest load when their tab is opened.
+   */
+  loaded: boolean;
 };
 
 export type ProfileResult = {

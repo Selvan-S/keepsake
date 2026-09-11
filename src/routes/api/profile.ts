@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { ProfileTab } from "@/lib/instagram/types";
+import type { ProfileTab } from "@/core/instagram/types";
 
 const TABS: ProfileTab[] = ["posts", "reels", "stories", "highlights"];
 
