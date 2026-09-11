@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Aperture } from "lucide-react";
 import type { PostResult } from "@/core/instagram/types";
 import { useDownloads } from "@/hooks/use-downloads";
@@ -7,7 +7,7 @@ import { useResolve } from "@/hooks/use-resolve";
 import { useSession } from "@/hooks/use-session";
 import { useArchive } from "@/hooks/use-archive";
 import { cn } from "@/lib/utils";
-import { HighlightFilter, LoadMoreBar, MediaGrid, TabLoading } from "./media-grid";
+import { GRID_PAGE, HighlightFilter, LoadMoreBar, MediaGrid, ShowMore, TabLoading } from "./media-grid";
 import { Lightbox } from "./lightbox";
 import { ProfileHeader } from "./profile-header";
 import { SearchBar } from "./search-bar";
@@ -31,9 +31,24 @@ export function KeepsakeApp() {
   const [lightbox, setLightbox] = useState<{ post: PostResult; index: number } | null>(null);
   const [highlightFilter, setHighlightFilter] = useState("all");
   const [archiveOpen, setArchiveOpen] = useState(false);
+  // How many tiles are rendered, independent of how many are loaded.
+  const [visible, setVisible] = useState(GRID_PAGE);
+
+  // Stable identities, so memoised tiles are not reconciled on every archive
+  // progress tick.
+  const openLightbox = useCallback((post: PostResult, index: number) => {
+    setLightbox({ post, index });
+  }, []);
+  const downloadPost = useCallback(
+    (post: PostResult) => {
+      void downloads.downloadPost(post);
+    },
+    [downloads],
+  );
 
   useEffect(() => {
     setHighlightFilter("all");
+    setVisible(GRID_PAGE);
   }, [profile?.username, tab]);
 
   const albums = useMemo(() => {
@@ -135,13 +150,20 @@ export function KeepsakeApp() {
         ) : null}
 
         {posts.length > 0 ? (
-          <MediaGrid
-            posts={posts}
-            wide={posts.length !== 1 || Boolean(profile)}
-            busyKey={downloads.busyKey}
-            onOpen={(post, index) => setLightbox({ post, index })}
-            onDownloadPost={(post) => void downloads.downloadPost(post)}
-          />
+          <>
+            <MediaGrid
+              posts={posts.slice(0, visible)}
+              wide={posts.length !== 1 || Boolean(profile)}
+              busyKey={downloads.busyKey}
+              onOpen={openLightbox}
+              onDownloadPost={downloadPost}
+            />
+            <ShowMore
+              shown={Math.min(visible, posts.length)}
+              total={posts.length}
+              onMore={() => setVisible((v) => v + GRID_PAGE)}
+            />
+          </>
         ) : null}
 
         {profile && (loading || paging.tabLoading) && posts.length === 0 ? <TabLoading tab={tab} /> : null}

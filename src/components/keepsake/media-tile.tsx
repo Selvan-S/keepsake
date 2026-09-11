@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Download, Film, Image as ImageIcon, LoaderCircle, Play } from "lucide-react";
 import type { PostResult } from "@/core/instagram/types";
 import { displayUrl } from "@/lib/media/source";
@@ -17,7 +18,7 @@ function kindLabel(kind: PostResult["kind"]): string {
   return "Photo";
 }
 
-export function MediaTile({
+function MediaTileImpl({
   post,
   index,
   busyKey,
@@ -27,8 +28,11 @@ export function MediaTile({
   post: PostResult;
   index: number;
   busyKey: string | null;
-  onOpen: (itemIndex: number) => void;
-  onDownloadAll: () => void;
+  // Take the post as an argument rather than closing over it in the parent's
+  // map: an inline arrow is a new identity every render, which would defeat the
+  // memo below entirely.
+  onOpen: (post: PostResult, itemIndex: number) => void;
+  onDownloadAll: (post: PostResult) => void;
 }) {
   const cover = post.items[0];
   const saving = busyKey === `${post.shortcode}-all`;
@@ -38,13 +42,15 @@ export function MediaTile({
     <article className="overflow-hidden rounded-xl bg-bg-elevated shadow-[var(--shadow-border)]">
       <button
         type="button"
-        onClick={() => onOpen(0)}
+        onClick={() => onOpen(post, 0)}
         className="group relative block aspect-[4/5] w-full overflow-hidden bg-bg-subtle"
       >
         {cover ? (
           <img
             src={displayUrl(cover.thumbnailUrl || cover.url)}
             alt={post.caption.slice(0, 80) || `Post ${post.shortcode}`}
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover transition-transform duration-500 ease-[var(--ease-smooth-out)] group-hover:scale-[1.03]"
           />
         ) : (
@@ -97,14 +103,14 @@ export function MediaTile({
               variant="primary"
               size="sm"
               className="flex-1"
-              onClick={onDownloadAll}
+              onClick={() => onDownloadAll(post)}
               disabled={saving || post.items.length === 0}
             >
               {saving ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
               Save all
             </Button>
           )}
-          <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(0)}>
+          <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(post, 0)}>
             <ImageIcon className="size-4" />
             View
           </Button>
@@ -126,6 +132,8 @@ export function MediaTile({
                   <img
                     src={displayUrl(item.thumbnailUrl || item.url)}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-full object-cover"
                   />
                   {item.kind === "video" ? (
@@ -140,3 +148,10 @@ export function MediaTile({
     </article>
   );
 }
+
+/**
+ * Tiles are memoised because an archive run updates progress state many times a
+ * second. Without it, a fully-loaded profile reconciles hundreds of tiles on
+ * every tick, which is what made the page hang after a full archive.
+ */
+export const MediaTile = memo(MediaTileImpl);

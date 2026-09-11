@@ -79,10 +79,38 @@ export function MediaGrid({
           post={post}
           index={i}
           busyKey={busyKey}
-          onOpen={(itemIndex) => onOpen(post, itemIndex)}
-          onDownloadAll={() => onDownloadPost(post)}
+          onOpen={onOpen}
+          onDownloadAll={onDownloadPost}
         />
       ))}
+    </div>
+  );
+}
+
+/**
+ * How many tiles are rendered at once.
+ *
+ * Separate from how many posts are loaded: a fully archived profile holds
+ * hundreds, and putting them all in the DOM is what made the page hang. This
+ * caps the rendering, not the archive.
+ */
+export const GRID_PAGE = 48;
+
+export function ShowMore({
+  shown,
+  total,
+  onMore,
+}: {
+  shown: number;
+  total: number;
+  onMore: () => void;
+}) {
+  if (shown >= total) return null;
+  return (
+    <div className="mt-6 flex justify-center">
+      <Button type="button" variant="secondary" onClick={onMore}>
+        Show more ({shown} of {total})
+      </Button>
     </div>
   );
 }
