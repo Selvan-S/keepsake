@@ -65,6 +65,17 @@ idle
 constraint turns out to be a feature: it paces the whole thing for free and
 gives an obvious place to stop.
 
+### Two destinations
+
+Zipping is a workaround for not being able to write files, not a goal. Where
+the File System Access API exists, folder mode avoids it entirely: nothing is
+held in memory, the directory structure is real, one permission covers the
+whole run, and "have I already got this?" is answered by the filesystem rather
+than by a list we maintain and hope is right. That is also how the React Native
+port will save, so it is the direction of travel rather than a detour.
+
+Zip batching stays for everywhere else, and everything below describes it.
+
 ### Batching by size, not just count
 
 Count-based batching is what produces the OOM: 100 photos is ~30 MB, 100 reels
@@ -143,9 +154,15 @@ multi-batch job, never on load. Degrade silently if refused.
 3. **Done.** Scope dialog + progress. "Save profile" opens it instead of zipping
    whatever happened to be in memory; the old capped path is deleted rather than
    left callable.
-4. Per-tab full download.
-5. Selection mode.
-6. Notifications.
+4. **Done (better than planned).** Folder mode: where the File System Access
+   API exists, files are written straight into a picked folder as
+   `username/posts/...` with no zips at all. Duplicates are detected against
+   what is on disk, which is a truer record than the shortcode list. Zip
+   batches remain the fallback for browsers without it (Firefox, Safari,
+   Android Chrome).
+5. Per-tab full download.
+6. Selection mode.
+7. Notifications.
 
 Steps 1–3 are the bug fix. **Not yet verified against a real archive run** —
 the batching, resume and save-per-batch paths have only been exercised by

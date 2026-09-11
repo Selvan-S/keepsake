@@ -12,11 +12,19 @@ import {
 import { plural } from "@/core/archive/naming";
 import { packBatch } from "@/lib/download/pack";
 import { shareOrDownload } from "@/lib/download/share";
+import {
+  ensureWritable,
+  folderModeAvailable,
+  pickFolder,
+  writeEntriesToFolder,
+  type DirectoryHandle,
+} from "@/lib/download/folder";
 import type { PagingApi } from "./use-profile-paging";
 import type { ResolveApi } from "./use-resolve";
 
 export type ArchiveStatus =
   | "idle"
+  | "writing"
   | "collecting"
   | "packaging"
   | "awaiting"
@@ -109,6 +117,7 @@ export function useArchive(resolve: ResolveApi, paging: PagingApi) {
   const savedRef = useRef<Set<string>>(new Set());
   const scopeRef = useRef<ArchiveScope | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const folderRef = useRef<DirectoryHandle | null>(null);
   const batchRef = useRef(0);
   const failedRef = useRef(0);
   const filesSavedRef = useRef(0);
@@ -252,12 +261,65 @@ export function useArchive(resolve: ResolveApi, paging: PagingApi) {
     bytesSavedRef.current = 0;
     savedRef.current = new Set();
     scopeRef.current = null;
+    folderRef.current = null;
     setState(IDLE);
   }, []);
 
+  /**
+   * Folder mode: no zips, no batches, no tap between them. Files stream to
+   * disk one at a time, and anything already there is skipped -- the
+   * filesystem is a better record of what has been archived than a list we
+   * keep ourselves.
+   */
+  const writeToFolder = useCallback(
+    async (folder: DirectoryHandle, entries: ArchiveEntry[], signal: AbortSignal) => {
+      patch({ status: "writing", label: "Saving files…", progress: 0 });
+      const outcome = await writeEntriesToFolder(folder, entries, {
+        signal,
+        onProgress: (done, running) => {
+          patch({
+            label: `Saving ${done} of ${entries.length}…`,
+            progress: done / Math.max(1, entries.length),
+            filesSaved: running.written,
+            failed: running.failed,
+          });
+        },
+      });
+      if (signal.aborted) {
+        patch({ status: "cancelled", label: "Archive stopped" });
+        return;
+      }
+      const skipped = outcome.skipped > 0 ? `, ${outcome.skipped} already there` : "";
+      patch({
+        status: "done",
+        progress: 1,
+        label: `Saved ${plural(outcome.written, "file")}${skipped}`,
+        filesSaved: outcome.written,
+        failed: outcome.failed,
+      });
+    },
+    [patch],
+  );
+
   const start = useCallback(
-    async (scope: ArchiveScope, options: { resume?: boolean } = {}) => {
+    async (
+      scope: ArchiveScope,
+      options: { resume?: boolean; toFolder?: boolean } = {},
+    ) => {
       if (!profile) return;
+
+      // Ask for the folder before anything else: the picker needs the user
+      // gesture that opened the dialog, and a run that collects for a minute
+      // first would have lost it.
+      let folder: DirectoryHandle | null = null;
+      if (options.toFolder) {
+        folder = await pickFolder();
+        if (!folder) return;
+        if (!(await ensureWritable(folder))) {
+          toast.error("Keepsake needs permission to write to that folder.");
+          return;
+        }
+      }
 
       const previous = options.resume ? readPersisted() : null;
       const carried =
@@ -268,6 +330,7 @@ export function useArchive(resolve: ResolveApi, paging: PagingApi) {
       abortRef.current = controller;
       scopeRef.current = scope;
       savedRef.current = carried;
+      folderRef.current = folder;
       setState({ ...IDLE, status: "collecting", label: "Working out what to fetch…" });
 
       // 1. Collect. The selection path skips this entirely -- those posts are
@@ -307,10 +370,15 @@ export function useArchive(resolve: ResolveApi, paging: PagingApi) {
         return;
       }
 
+      if (folderRef.current) {
+        await writeToFolder(folderRef.current, entriesRef.current, controller.signal);
+        return;
+      }
+
       patch({ estimatedBatches: estimateBatchCount(entriesRef.current.length), progress: 0 });
       await packNext();
     },
-    [packNext, paging, patch, profile, reset, resultRef],
+    [packNext, paging, patch, profile, reset, resultRef, writeToFolder],
   );
 
   /** A previous run for this profile that stopped part-way, if any. */
@@ -325,10 +393,16 @@ export function useArchive(resolve: ResolveApi, paging: PagingApi) {
     toast.success("Cleared the saved archive progress.");
   }, []);
 
-  /** Total files planned, for the UI's estimate. */
-  const plannedFiles = useCallback(() => entriesRef.current.length, []);
-
-  return { state, start, saveBatch, cancel, reset, resumable, discardResume, plannedFiles };
+  return {
+    state,
+    start,
+    saveBatch,
+    cancel,
+    reset,
+    resumable,
+    discardResume,
+    folderModeAvailable: folderModeAvailable(),
+  };
 }
 
 export type ArchiveApi = ReturnType<typeof useArchive>;

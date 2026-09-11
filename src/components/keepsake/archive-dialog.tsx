@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, LoaderCircle, X } from "lucide-react";
+import { Download, FolderOpen, LoaderCircle, X } from "lucide-react";
 import type { ProfileResult, ProfileTab } from "@/core/instagram/types";
 import { estimateBatchCount } from "@/core/archive/batch";
 import type { ArchiveScope } from "@/core/archive/plan";
@@ -58,6 +58,7 @@ export function ArchiveDialog({
   const [everything, setEverything] = useState(true);
   const [limit, setLimit] = useState(120);
   const [confirmedLarge, setConfirmedLarge] = useState(false);
+  const [toFolder, setToFolder] = useState(archive.folderModeAvailable);
 
   const { state } = archive;
   const running = state.status !== "idle";
@@ -90,7 +91,7 @@ export function ArchiveDialog({
   const scope: ArchiveScope = { tabs, perTabLimit: everything ? null : limit };
 
   const begin = (resumePrevious: boolean) => {
-    void archive.start(scope, { resume: resumePrevious });
+    void archive.start(scope, { resume: resumePrevious, toFolder });
   };
 
   return (
@@ -119,7 +120,11 @@ export function ArchiveDialog({
             className="size-9 shrink-0"
             onClick={onClose}
             aria-label="Close"
-            disabled={state.status === "collecting" || state.status === "packaging"}
+            disabled={
+              state.status === "collecting" ||
+              state.status === "packaging" ||
+              state.status === "writing"
+            }
           >
             <X className="size-4" />
           </Button>
@@ -206,11 +211,59 @@ export function ArchiveDialog({
               </div>
             </fieldset>
 
+            <fieldset className="mt-4">
+              <legend className="text-xs uppercase tracking-[0.16em] text-subtle">Save as</legend>
+              {archive.folderModeAvailable ? (
+                <div className="mt-2 grid gap-2">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 text-sm shadow-[var(--shadow-border)]">
+                    <input
+                      type="radio"
+                      className="mt-0.5 size-4 accent-[var(--color-primary)]"
+                      checked={toFolder}
+                      onChange={() => setToFolder(true)}
+                    />
+                    <span className="flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <FolderOpen className="size-3.5" /> Folder on this device
+                      </span>
+                      <span className="mt-1 block text-xs leading-relaxed text-subtle">
+                        Pick a folder once and everything is written into
+                        <span className="font-mono"> {profile.username}/posts/…</span> as it
+                        downloads. Files already there are skipped, so running it again tops the
+                        same folder up. No zips, and nothing held in memory.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 text-sm shadow-[var(--shadow-border)]">
+                    <input
+                      type="radio"
+                      className="mt-0.5 size-4 accent-[var(--color-primary)]"
+                      checked={!toFolder}
+                      onChange={() => setToFolder(false)}
+                    />
+                    <span className="flex-1">
+                      Zip files
+                      <span className="mt-1 block text-xs leading-relaxed text-subtle">
+                        Downloaded in batches, one tap each.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs leading-relaxed text-subtle">
+                  Zip files, downloaded in batches with a tap each. Saving straight into a folder
+                  needs the File System Access API, which this browser does not offer — it is
+                  desktop Chrome and Edge only.
+                </p>
+              )}
+            </fieldset>
+
             <p className="mt-4 text-xs leading-relaxed text-subtle">
-              Roughly {expectedPosts.toLocaleString()} posts, so at least{" "}
-              {estimateBatchCount(expectedPosts)} zip{estimateBatchCount(expectedPosts) === 1 ? "" : "s"}.
-              Carousels count as several files each, so expect more. You save each zip as it is
-              ready — the browser will not accept them all at once.
+              Roughly {expectedPosts.toLocaleString()} posts, and carousels count as several
+              files each.{" "}
+              {toFolder
+                ? "Files are written as they arrive, so you can stop any time and re-run later to pick up the rest."
+                : `That is at least ${estimateBatchCount(expectedPosts)} zip${estimateBatchCount(expectedPosts) === 1 ? "" : "s"}, saved one at a time — the browser will not accept them all at once.`}
             </p>
 
             {isLarge && !confirmedLarge ? (
@@ -251,7 +304,8 @@ export function ArchiveDialog({
 
 function ArchiveProgress({ archive, onClose }: { archive: ArchiveApi; onClose: () => void }) {
   const { state } = archive;
-  const busy = state.status === "collecting" || state.status === "packaging";
+  const busy =
+    state.status === "collecting" || state.status === "packaging" || state.status === "writing";
   const pct = state.progress === null ? null : Math.round(state.progress * 100);
 
   return (
@@ -271,13 +325,14 @@ function ArchiveProgress({ archive, onClose }: { archive: ArchiveApi; onClose: (
           <dt className="text-xs text-subtle">Saved so far</dt>
           <dd className="tabular-nums">{plural(state.filesSaved, "file")}</dd>
         </div>
-        <div>
-          <dt className="text-xs text-subtle">Batch</dt>
-          <dd className="tabular-nums">
-            {state.batchIndex}
-            {state.estimatedBatches ? ` of ~${state.estimatedBatches}` : ""}
-          </dd>
-        </div>
+        {state.estimatedBatches ? (
+          <div>
+            <dt className="text-xs text-subtle">Batch</dt>
+            <dd className="tabular-nums">
+              {state.batchIndex} of ~{state.estimatedBatches}
+            </dd>
+          </div>
+        ) : null}
       </dl>
 
       {state.failed > 0 ? (
